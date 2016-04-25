@@ -1,5 +1,14 @@
 Dato un file global.cfg come il seguente:
 
+# groupID:moduleID:sensorID:wiredPI:type:mode:maxExecutionTime:order:defaultState:currentState:description:alias:groups
+x:0:0:0:out:standard:0:0:off:off:descrizione1:alias1:1
+x:0:1:4:out:standard:0:0:off:off:descrizione2:alias2:1 2
+x:0:2:7:out:standard:0:0:off:off:descrizione3:alias3:2
+1:0:x:x:x:x:0:0:off:off:gruppo1:aliasgruppo:
+3:0:x:x:x:x:0:0:off:off:gruppo2:aliasgruppo:
+4:0:x:x:x:x:0:0:off:off:supergruppo:aliassupergruppo:1 2
+x:0:5:7:out:standard:0:0:off:off:descrizione5:alias5:4
+
 Eseguiamo le seguenti:
 
 . domopi.functions 
