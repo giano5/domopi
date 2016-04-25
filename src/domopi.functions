@@ -1,0 +1,215 @@
+#!/bin/false
+#	La prima riga impedisce di essere utilizzato come programma.
+#	E' solo una libreria.
+#
+# DomoPI API
+#
+#    This program is free software: you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation, either version 3 of the License, or
+#    (at your option) any later version.
+#
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+#    Copyrights (C) 2016 
+#
+#	 @date:
+#	 @version:
+#
+
+# Global variables
+DOMOPI_CONF_PATH=.
+DOMOPI_BIN_PATH=.
+
+# Configuration files
+DOMOPI_IDENT_FILE=$DOMOPI_CONF_PATH/ident.cfg
+DOMOPI_GLOBAL_CONF=$DOMOPI_CONF_PATH/global.cfg
+
+unset DOMOPI_PRIVATE_FUNC_LIST
+
+
+# Internal use only
+#
+#	Make private function declaration (as C++, PHP, or other languages)
+#	Private means "Not available as command"
+#
+function private()
+{
+	DOMOPI_PRIVATE_FUNC_LIST="$DOMOPI_PRIVATE_FUNC_LIST $@"
+	return 0
+}
+
+# Internal use only
+## NOTE: Analogamente si poterbbe costruire una lista di funzioni definite public
+## per avere automaticamente i "symbols" della API
+function public()
+{
+	DOMOPI_PUBLIC_FUNC_LIST="$DOMOPI_PUBLIC_FUNC_LIST $@"
+	return 0
+}
+
+
+#
+# Get column numbert (position) from conf header
+# Read from global.cfg header 
+#
+# $1 - Column name
+#
+#private domopi_column_by_name
+function domopi_column_by_name()
+{
+	IFS='#:' read -r -a C < $DOMOPI_GLOBAL_CONF
+
+	unset DOMOPI_CONF_FILE_COL_NUMBER
+	local colIdx=1
+	for col in ${C[@]}
+	do
+		if [[ "${col,,}" = "${1,,}" ]]
+		then
+			echo $colIdx
+			DOMOPI_CONF_FILE_COL_NUMBER=$colIdx
+			return
+		fi
+		colIdx=$((colIdx + 1))
+	done
+}
+
+
+#-----------------------------------------------
+# Begin-of-API
+#-----------------------------------------------
+
+# NOTA GENERALE: le funzioni (proprie) con un output
+#		avranno in realtà un doppio output (oltre exit code).
+#		Uno a STDOUT e uno con variabile pari a DOMOPI_RESULT
+#		oppure ad un nome semanticamente collegato alla funzione
+#		e con prefisso DOMOPI_
+#
+
+
+#
+#	(get?)Identity
+#
+#	Parameters
+#		$1 -
+#		$2
+#	Return (exit code)
+#
+function domopi_ident()
+{
+	DOMOPI_IDENT=$(cat $DOMOPI_IDENT_FILE)		# internal use
+	echo DOMOPI_IDENT	# global/external command use
+	return 0
+}
+
+
+#
+# Get next val for SEQUENTIAL type column
+#
+# $1 - column (name)
+# $2 - min (default 0)
+# $3 - max (default 1000)
+#
+#
+#private domopi_seq_nextval
+function domopi_seq_nextval()
+{
+	domopi_column_by_name "$1" >/dev/null
+	[ -z "$DOMOPI_CONF_FILE_COL_NUMBER" ] && return 2
+
+	local ACTUAL_ID_TMP=$(mktemp)
+	local FULL_ID_TMP=$(mktemp)
+	
+	grep -v '^#' $DOMOPI_GLOBAL_CONF | cut -d: -f$DOMOPI_CONF_FILE_COL_NUMBER | egrep '^[0-9]+$' | sort -g >$ACTUAL_ID_TMP
+
+	local minid=${2:-0}
+	local maxid=$(tail -1 $ACTUAL_ID_TMP)
+
+	if [ $maxid -gt ${3:-1000} ]
+	then
+		echo 'Sequence exceed maximum' >&2 
+		# cleanup
+		rm $ACTUAL_ID_TMP $FULL_ID_TMP
+		return
+	fi
+	seq $minid $((maxid + 1)) >	$FULL_ID_TMP
+	nextid=$(join -v 1 $FULL_ID_TMP $ACTUAL_ID_TMP | head -1 )
+	eval DOMOPI_${1^^}_COLUMN_NEXT_ID=$nextid
+	echo $nextid
+
+# cleanup
+	rm $ACTUAL_ID_TMP $FULL_ID_TMP
+}
+
+
+#
+#	$1 -	
+#
+function domopi_lgcreate()
+{
+	DOMOPI_RESULT=""	# se utile
+	echo $DOMOPI_RESULT	# se utile
+	return 0
+}
+
+# Make private internal function
+#
+for f in $DOMOPI_PRIVATE_FUNC_LIST
+do
+	echo DEBUG. unsetting $f
+	unset $f
+done
+unset private
+unset $DOMOPI_PRIVATE_FUNC_LIST
+
+
+#-----------------------------------------------
+# End-of-API
+#-----------------------------------------------
+
+
+#
+# Esempi d'uso
+#-----------------------------
+
+# ./domopi.functions   # NON ESEGUE !
+# . domopi.functions   # include la libreria
+# 
+# Sono diponibili come comandi (quindi anche come funzioni se incluso in un ulteriore script)
+# le sole funzioni non dichiarate private.
+# 
+# Quindi possiamo scrivere:
+# 
+# domopi_ident
+# 
+# e ottenere a STDOUT l'identità (per un uso interattivoi e quindi feedback utente) 
+# 
+# oppure usare 
+# 
+# domopi_ident >/dev/null
+# 
+# per utilizzare solo la variabile DOMOPI_IDENT (uso interno ad uno script, senza over utilizzare costrutti per leggere stdout in variabile).
+# 
+# Il passaggio argomenti è ovviamente consentito come per ogni funzione bash.
+# 
+
+# lgrcreate.sh
+# lgrremove.sh
+# lseadd.sh
+# lsedel.sh
+# lsemod.sh
+# mgrcreate.sh
+# mgrremove.sh
+# mgrmod.sh
+# mgradd.sh
+# mgrdel.sh
+# mgrlist.sh
+# round.sh
+
+

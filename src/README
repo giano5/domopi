@@ -1,0 +1,21 @@
+Dato un file global.cfg come il seguente:
+
+Eseguiamo le seguenti:
+
+. domopi.functions 
+
+# Richiediamo il prossimo ID per aggiungere un nuovo gruppo
+# (sarà funzione privata una volta disponibile domopi_group_add)
+domopi_seq_nextval  groupid 1
+
+# Richiediamo il prossimo ID per aggiungere un nuovo sensore
+# (sarà funzione privata una volta disponibile domopi_sensor_add)
+domopi_seq_nextval  sensorid
+
+# Lista dell variabili pubbliche disponibili
+set | grep ^DOMOPI
+
+
+La libreria domopi.function deve essere ricaricata ad ogni
+modifica. Hainternamente sistemi per ripubblicare solo ciò che
+è previsto, lasciando inalterato il resto dell'ambiente.
