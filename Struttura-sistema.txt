@@ -1,5 +1,5 @@
 Elementi strutturali del sistema
-
+Versione documento: DRAFT
 
 STRUTTURA CARTELLE E FILE
 Domopi/	
