@@ -26,11 +26,28 @@
 # Global variables
 DOMOPI_CONF_PATH=.
 DOMOPI_BIN_PATH=.
+# Percorso istallazione di questo file (ad uso interno)
+DOMOPI_API_PATH=~/repo/domopi/src/domopi.functions
+
+
+declare -A DOMOPI_FILE_SCHEMA
 
 # Configuration files
 DOMOPI_IDENT_FILE=$DOMOPI_CONF_PATH/ident.cfg
 DOMOPI_GLOBAL_CONF=$DOMOPI_CONF_PATH/global.cfg
+DOMOPI_FILE_FINGERPRINT='# Automatically generatedfile: do not modify!'
 
+# Schema is for generate initial configuration
+DOMOPI_FILE_SCHEMA['global']='# groupID:moduleID:sensorID:wiredPI:type:mode:maxExecutionTime:order:defaultState:currentState:descriptionU:alias:groups'
+
+unset DOMOPI_FILE_DESCRIPTORS
+declare -a DOMOPI_FILE_DESCRIPTORS
+# Declare standard opened
+DOMOPI_FILE_DESCRIPTORS[0]=opened
+DOMOPI_FILE_DESCRIPTORS[1]=opened
+DOMOPI_FILE_DESCRIPTORS[2]=opened
+
+unset DOMOPI_PUBLIC_FUNC_LIST
 unset DOMOPI_PRIVATE_FUNC_LIST
 
 
@@ -39,15 +56,15 @@ unset DOMOPI_PRIVATE_FUNC_LIST
 #	Make private function declaration (as C++, PHP, or other languages)
 #	Private means "Not available as command"
 #
-function private()
-{
-	DOMOPI_PRIVATE_FUNC_LIST="$DOMOPI_PRIVATE_FUNC_LIST $@"
-	return 0
-}
+#function private()
+#{
+#	DOMOPI_PRIVATE_FUNC_LIST="$DOMOPI_PRIVATE_FUNC_LIST $@"
+#	return 0
+#}
 
 # Internal use only
-## NOTE: Analogamente si poterbbe costruire una lista di funzioni definite public
-## per avere automaticamente i "symbols" della API
+# NOTE: Analogamente si poterbbe costruire una lista di funzioni definite public
+# per avere automaticamente i "symbols" della API
 function public()
 {
 	DOMOPI_PUBLIC_FUNC_LIST="$DOMOPI_PUBLIC_FUNC_LIST $@"
@@ -56,29 +73,376 @@ function public()
 
 
 #
-# Get column numbert (position) from conf header
-# Read from global.cfg header 
 #
-# $1 - Column name
+# @author Andrea Tassotti
+#
+function trim() {
+    local var="$*"
+    var="${var#"${var%%[![:space:]]*}"}"   # remove leading whitespace characters
+    var="${var%"${var##*[![:space:]]}"}"   # remove trailing whitespace characters
+    echo -n "$var"
+}
+
+
+#
+# @author Andrea Tassotti
+#
+function ltrim() {
+    local var="$*"
+    var="${var#"${var%%[![:space:]]*}"}"   # remove leading whitespace characters
+    echo -n "$var"
+}
+
+
+#
+# @author Andrea Tassotti
+#
+function rtrim() {
+    local var="$*"
+    var="${var%"${var##*[![:space:]]}"}"   # remove trailing whitespace characters
+    echo -n "$var"
+}
+
+
+#
+# @author Andrea Tassotti
+#
+function no_spaces()
+{
+    local var="$*"
+	echo -n "${var/\ /}"
+}
+
+
+#
+#
+# @author Andrea Tassotti
+#
+function _get_file_descriptor()
+{
+	for((i=0;i<${#DOMOPI_FILE_DESCRIPTORS};i++))
+	do
+		if [[ ${DOMOPI_FILE_DESCRIPTORS[$i]} != 'opened' ]]
+		then
+			DOMOPI_FILE_DESCRIPTORS[$i]='opened'
+			return $i
+		fi
+	done
+	return 255
+}
+
+
+#
+# $1 - file descriptor to release
+#
+# @author Andrea Tassotti
+#
+function _release_file_descriptor()
+{
+	DOMOPI_FILE_DESCRIPTORS[$1]='closed'
+}
+
+
+#
+#
+#	Restituisce una variabile DOMOPI_SCHEMA_<nome schema>
+#	letta dal filee contenente nomi colonne file
+#	Restituisce anche DOMOPI_SCHEMA_NAME
+#
+#	$1 - File name
+#	$2 - (optional)fingerprint schema extension
+#
+#	return file descriptor id or 255 if any error
+#	
+#
+# @author Andrea Tassotti
+#
+#private domopi_file_open
+function _domopi_file_open
+{
+	_get_file_descriptor
+	fd=$?
+	eval "exec $fd<> \"$1\""
+
+	if [ $? -eq 0 ]; then
+	# validate fingerprint
+		IFS='$' read FINGERPRINT SCHEMA <&$fd
+		if [ "$(rtrim $FINGERPRINT)" != "$DOMOPI_FILE_FINGERPRINT" ]
+		then
+			echo "FATAL: Not a DOMOPI file!" >&2
+	echo $FINGERPRINT
+			return 255
+		fi
+		if [ -n "$2" ] && [ "$2" != "$SCHEMA" ]
+		then
+			echo "FATAL: Wrong DOMOPI $2 file!" >&2
+			return 255
+		fi
+
+		if [[ "$SCHEMA" != "ident" ]]; then
+			IFS='#:' read -r -a DOMOPI_SCHEMA_$SCHEMA <&$fd
+			if [ $? -ne 0 ]; then
+				echo "FATAL: missing schema" >&2
+				return 255
+			fi
+			DOMOPI_SCHEMA_NAME=$SCHEMA
+		fi
+	fi
+
+	return $fd
+}
+
+
+#
+#	$1 - file descriptor to close
+#
+# @author Andrea Tassotti
+#
+#private domopi_file_close
+function _domopi_file_close
+{
+	[ -n "$1" ] && eval "exec $1>&-" && _release_file_descriptor $1
+}
+
+
+#
+#
+#	$1 - file descriptor 
+#	$2 - token
+#
+# @author Andrea Tassotti
+#
+#private domopi_file_read_token
+function _domopi_file_read_token()
+{
+	[ $# -lt 2 ] && return 3
+	local TOKEN
+	read TOKEN VALUE <&$1
+	[ $TOKEN != "$2" ] && echo ERROR: unexpected token at line 2 >&2 && return 2
+	return 0
+}
+
+#	
+# Describe schema
+#
+#	$1 - Schema name
+#
+function _domopi_desc()
+{
+	echo -n "Column number: "
+	eval echo \${#DOMOPI_SCHEMA_$1[@]}
+	echo -n "Keys: "
+	eval echo \${DOMOPI_SCHEMA_$1[@]} | while read key
+	do
+		echo -n "$key "
+	done
+	echo
+}
+
+
+#
+# Get column numbert (position) from conf header
+#
+#	Read schema directly from file is useful for
+#	backward schema compatibility
+#	Return index in DOMOPI_CONF_FILE_COL_NUMBER
+#
+#	$1 - schema name
+#	$2 - Column name
+#
+#	return 0 on succedd
+#
+# 
+# @author Andrea Tassotti
 #
 #private domopi_column_by_name
-function domopi_column_by_name()
+function _domopi_column_by_name()
 {
-	IFS='#:' read -r -a C < $DOMOPI_GLOBAL_CONF
-
 	unset DOMOPI_CONF_FILE_COL_NUMBER
-	local colIdx=1
-	for col in ${C[@]}
-	do
-		if [[ "${col,,}" = "${1,,}" ]]
-		then
-			echo $colIdx
-			DOMOPI_CONF_FILE_COL_NUMBER=$colIdx
-			return
-		fi
-		colIdx=$((colIdx + 1))
-	done
+	[ $# -lt 2 ] && return 2
+
+	if [ $# -eq 2 ]
+	then
+		local colIdx=1
+		DOMOPI_SCHEMA=$( eval echo \${DOMOPI_SCHEMA_$1[@]} )
+		for col in $DOMOPI_SCHEMA
+		do
+			if [[ "${col,,}" = "${2,,}" ]]
+			then
+				echo $colIdx
+				DOMOPI_CONF_FILE_COL_NUMBER=$colIdx
+				return 0
+			fi
+			colIdx=$((colIdx + 1))
+		done
+	else
+		echo FATAL: missing arguments >&2
+		return 255
+	fi
 }
+
+
+#
+# Get next val for SEQUENTIAL type column
+#
+# 
+# $1 - file name
+# $2 - column (name)
+# $3 - min (default 0)
+# $4 - max (default 1000)
+#
+# @author Andrea Tassotti
+#
+#private domopi_seq_nextval
+function _domopi_seq_nextval()
+{
+	# Read schema
+	_domopi_file_open "$1"
+	fd=$?
+	_domopi_file_close $fd
+
+	_domopi_column_by_name "$DOMOPI_SCHEMA_NAME" "$2" >/dev/null
+	[ -z "$DOMOPI_CONF_FILE_COL_NUMBER" ] && return 2
+
+	local ACTUAL_ID_TMP=$(mktemp)
+	local FULL_ID_TMP=$(mktemp)
+	
+	grep -v '^#' "$1" | cut -d: -f$DOMOPI_CONF_FILE_COL_NUMBER | egrep '^[0-9]+$' | sort -g | tee >$ACTUAL_ID_TMP
+
+	local maxid=$(tail -1 $ACTUAL_ID_TMP)
+
+	if [ ${maxid:-0} -gt ${4:-1000} ]
+	then
+		echo 'Sequence exceed maximum' >&2 
+		# cleanup
+		rm $ACTUAL_ID_TMP $FULL_ID_TMP
+		return
+	fi
+	seq $minid $((maxid + 1)) >	$FULL_ID_TMP
+	nextid=$(join -v 1 $FULL_ID_TMP $ACTUAL_ID_TMP | head -1 )
+	eval DOMOPI_${2^^}_COLUMN_NEXT_ID=$nextid
+	echo $nextid
+
+# cleanup
+	rm $ACTUAL_ID_TMP $FULL_ID_TMP
+}
+
+
+
+#
+# Domopi conf file CRUD
+#
+# lista coppie key=value per chiavi ricerca (AND)
+#
+function _domopi_select_row()
+{
+	return 0
+}
+
+
+#
+# Domopi conf file CRUD
+#
+#	Inserisce una riga nel file indicato
+#	rispettando il suo schema.
+#	In argomento sono passate coppie chiave valore;
+#	se la chiave coincide con lo schema allora viene
+#	inserita (altrimenti viene silentemente ignorata).
+#	Le colonne auto-increment devono esprimere un valore *;
+#	sono autoincrement solo le colonne il cui nome termina con ID.
+#	Sono invece univoche le colonne che terminano con U.
+#	Si ricordi che i nomi di colonna sono minuscoli, quindi
+#	il suffisso maiuscolo è un tipo/caratteristica
+#
+#	$1 - file
+#	$@ - lista coppie key:value per i valori
+#
+#
+function _domopi_insert_row()
+{
+	file=$1
+	# Read schema
+	_domopi_file_open "$file"
+	fd=$?
+	_domopi_file_close $fd
+
+	shift
+
+	# processa argomenti (TODO:sarà _domopi_values ee _domopi_where
+
+	declare -A columns
+
+	for a in "$@"
+	do
+		key="${a%%:*}"
+		value="${a##*:}"
+		if [[ "$key" =~ ID$ ]] && [ "$value" = '*' ]
+		then
+			value=$( _domopi_seq_nextval "$file" "$key" )
+		fi
+
+		# Deve rispettare univocità delle colonne che finiscono con U
+		if [[ "$key" =~ U$ ]]
+		then
+			_domopi_column_by_name "$DOMOPI_SCHEMA_NAME" "$key" >/dev/null
+			if grep -v '^#' "$file" | cut -d: -f$DOMOPI_CONF_FILE_COL_NUMBER | grep "$value" >/dev/null
+			then
+				echo WARNING: duplicate value $value in column $key >&2
+				return 255
+			fi
+		fi
+
+		columns[$key]=$value
+	done
+
+	
+	row=""
+	local _TMP=$(mktemp)
+	eval echo \${DOMOPI_SCHEMA_$DOMOPI_SCHEMA_NAME[@]} >$_TMP
+	while read -d ' ' key
+	do
+		if [ -n "${columns[$key]}" ]
+		then
+			value="${columns[$key]}"
+		else
+			value=
+			[[ "$key" =~ ID$ ]] && value=x
+		fi
+		row="$row$value:"
+	done <$_TMP
+
+	echo "$row" >>"$file"
+
+	return 0
+}
+
+
+#
+# Domopi conf file CRUD
+#
+# lista coppie key=value per chiavi ricerca (AND)
+#
+function _domopi_delete_row()
+{
+	return 0
+}
+
+#
+# Domopi conf file CRUD
+#
+# lista coppie key:value per i valori
+# lista coppie key=value per chiavi ricerca (AND)
+#
+function _domopi_update_row()
+{
+	return 0
+}
+
+#
+# PROPOSAL:
+#
+#	Directory API extensions to autoload
+#
 
 
 #-----------------------------------------------
@@ -92,71 +456,151 @@ function domopi_column_by_name()
 #		e con prefisso DOMOPI_
 #
 
+##
+#
+#
+public domopi_help
+function domopi_help
+{
+	echo "API Public functions:"
+	echo
+	for f in $DOMOPI_PUBLIC_FUNC_LIST
+	do
+		echo -e "\t$f()"
+	done
+	echo
+	echo "Use domopi_man <function_name> for details"
+}
 
+##
 #
-#	(get?)Identity
+#	@see bashdoc
 #
-#	Parameters
-#		$1 -
-#		$2
-#	Return (exit code)
+public domopi_man
+function domopi_man
+{
+/usr/bin/awk '
+/^##/				{ incomment=1; insummary=1; text=""; getline; }
+/^#[[:blank:]]*$/	{ insummary=0; getline; }
+/^#[[:blank:]]*[\-][a-zA-Z]+/ { if (incomment) { insummary=0; par=""; for(i=2;i<=NF;i++) par=par" "$i; o[$2]=par; next; } }
+/^#[[:blank:]]*[\@]author/ { if (incomment) { insummary=0; author=""; for(i=3;i<=NF;i++) author=author$i" "; next; } }
+/^#[[:blank:]]*[\@]note/ { if (incomment) { insummary=0; n=""; for(i=3;i<=NF;i++) n=n$i" "; note[length(note)]=n; next; } }
+/^#[[:blank:]]*[\@]see/ { if (incomment) { insummary=0; s=""; for(i=3;i<=NF;i++) s=s$i" "; see[length(see)]=s; next; } }
+/^#.*[\$][0-9\?]+/	{ if (incomment) { par=""; for(i=2;i<=NF;i++) par=par" "$i; h[$2]=par; next; } }
+/^function /		{ if ( incomment && $2 == "'"$1()"'" ) { print "Funzione   : "$2; print "Sommario   : "summary; print "Descrizione: "text; print "Autore     : "author; for(v in note) print "Nota       : "note[v]; for(v in see) print "Vedi       : "see[v]; print "Parametri  :"; for(v in h) print h[v]; print "Opzioni    :"; for(v in o) print o[v]    ; print ""; } incomment=0; delete h; delete o; delete note; delete see; getline; }
+					{ if ( incomment ) { if ( insummary ) { summary=""; for(i=2;i<=NF;i++) summary=summary$i" "; } else { for(i=2;i<=NF;i++) text=text$i" "; } } } ' $DOMOPI_API_PATH
+}
+
+
+##
+#	getIdentity
+#
+#	$1 - filter component (ident, uuid, created)
+#
+#	$? - file descriptor or 255 on error
+#
+#	@author Andrea Tassotti
 #
 function domopi_ident()
 {
-	DOMOPI_IDENT=$(cat $DOMOPI_IDENT_FILE)		# internal use
-	echo DOMOPI_IDENT	# global/external command use
-	return 0
-}
+	_domopi_file_open $DOMOPI_IDENT_FILE
+	fd=$?
 
-
-#
-# Get next val for SEQUENTIAL type column
-#
-# $1 - column (name)
-# $2 - min (default 0)
-# $3 - max (default 1000)
-#
-#
-#private domopi_seq_nextval
-function domopi_seq_nextval()
-{
-	domopi_column_by_name "$1" >/dev/null
-	[ -z "$DOMOPI_CONF_FILE_COL_NUMBER" ] && return 2
-
-	local ACTUAL_ID_TMP=$(mktemp)
-	local FULL_ID_TMP=$(mktemp)
-	
-	grep -v '^#' $DOMOPI_GLOBAL_CONF | cut -d: -f$DOMOPI_CONF_FILE_COL_NUMBER | egrep '^[0-9]+$' | sort -g >$ACTUAL_ID_TMP
-
-	local minid=${2:-0}
-	local maxid=$(tail -1 $ACTUAL_ID_TMP)
-
-	if [ $maxid -gt ${3:-1000} ]
+	if [ $fd -ne 255 ]
 	then
-		echo 'Sequence exceed maximum' >&2 
-		# cleanup
-		rm $ACTUAL_ID_TMP $FULL_ID_TMP
-		return
+		_domopi_file_read_token $fd 'ident:' && DOMOPI_IDENT_IDENT=$VALUE &&
+		_domopi_file_read_token $fd 'uuid:' && DOMOPI_IDENT_UUID=$VALUE &&
+		_domopi_file_read_token $fd 'created:' && DOMOPI_IDENT_CREATED=$VALUE &&
+		# global/external command use
+		echo $DOMOPI_IDENT_IDENT $DOMOPI_IDENT_UUID $DOMOPI_IDENT_CREATED
+		_domopi_file_close $fd
 	fi
-	seq $minid $((maxid + 1)) >	$FULL_ID_TMP
-	nextid=$(join -v 1 $FULL_ID_TMP $ACTUAL_ID_TMP | head -1 )
-	eval DOMOPI_${1^^}_COLUMN_NEXT_ID=$nextid
-	echo $nextid
-
-# cleanup
-	rm $ACTUAL_ID_TMP $FULL_ID_TMP
+	
+	return 1
 }
 
 
+
+
+##
+#	Crea identità e file di configurazioni
 #
-#	$1 -	
+#	Da utilizzare una sola volta nel ciclo di vita del
+#	sistema per creare i file di configurazione richiesti.
 #
-function domopi_lgcreate()
+#	$1 -	Identity	
+#
+#	@note ATTENZIONE! Operazione irreversibile
+#	@author Andrea Tassotti
+#
+public domopi_init
+function domopi_init()
 {
-	DOMOPI_RESULT=""	# se utile
-	echo $DOMOPI_RESULT	# se utile
+	if [ -z "$1" ]
+	then
+		echo "ERROR: identity missing." >&2
+		return 1
+	fi
+
+	# Generate Identity file
+
+	# generate uuid
+	if [ -x /usr/bin/uuidgen ]; then
+		UUID=$(/usr/bin/uuidgen)
+	else # less accurate uuid
+		UUID=$(printf %04x%04x-%04x-%04x-%04x-%04x%04x%04x $RANDOM $RANDOM $RANDOM $RANDOM $RANDOM $RANDOM $RANDOM $RANDOM )
+	fi
+	echo "$DOMOPI_FILE_FINGERPRINT" '$ident$' >$DOMOPI_IDENT_FILE
+	echo "ident: $1" >>$DOMOPI_IDENT_FILE
+	echo "uuid: $UUID" >>$DOMOPI_IDENT_FILE
+	echo "created: $(date +%s)" >>$DOMOPI_IDENT_FILE
+
+	# Generate global configuration file (empty with schema)
+	echo "$DOMOPI_FILE_FINGERPRINT" '$global$' >$DOMOPI_GLOBAL_CONF
+	echo "${DOMOPI_FILE_SCHEMA['global']}" >>$DOMOPI_GLOBAL_CONF
+
 	return 0
 }
+
+
+##
+#	Creazione configurazione oggetti di base
+#
+#	Ancora incompleto.
+#	Scrive nel file determinato dalla variabile
+#	ambientale DOMOPI_GLOBAL_CONF creato con
+#	domopi_init
+#
+#	$1 - 'sensor', 'module' or 'group'
+#	$2 - name
+#
+#	-m moduleid
+#	-g groupid
+#	-w wiredPI
+#
+#
+public domopi_create
+function domopi_create()
+{
+
+	case "$1" in
+	sensor)
+		_domopi_insert_row $DOMOPI_GLOBAL_CONF sensorID:'*' "descriptionU:$2"
+		;;
+	*)
+		echo FATAL: not implemented >&2
+		return 1
+		;;
+	esac
+
+	# Il file di configurazione deve esistere inizializzato
+	return 0
+}
+
+
+#-----------------------------------------------
+# End-of-API
+#-----------------------------------------------
 
 # Make private internal function
 #
@@ -167,11 +611,6 @@ do
 done
 unset private
 unset $DOMOPI_PRIVATE_FUNC_LIST
-
-
-#-----------------------------------------------
-# End-of-API
-#-----------------------------------------------
 
 
 #
