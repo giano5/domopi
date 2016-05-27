@@ -16,3 +16,5 @@ Atttuale interfaccia disponibile:
 domopi_init
 domopi_ident
 domopi_create (parziale)
+domopi_get_state
+domopi_set_state
