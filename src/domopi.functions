@@ -222,23 +222,6 @@ function _domopi_file_read_token()
 	return 0
 }
 
-#	
-# Describe schema
-#
-#	$1 - Schema name
-#
-function _domopi_desc()
-{
-	echo -n "Column number: "
-	eval echo \${#DOMOPI_SCHEMA_$1[@]}
-	echo -n "Keys: "
-	eval echo \${DOMOPI_SCHEMA_$1[@]} | while read key
-	do
-		echo -n "$key "
-	done
-	echo
-}
-
 
 #
 # Get column numbert (position) from conf header
@@ -328,14 +311,131 @@ function _domopi_seq_nextval()
 }
 
 
+#
+#
+#
+#
+#
+function _domopi_desc()
+{
+	file=$1
+	## Read schema
+	_domopi_file_open "$file"
+	fd=$?
+	_domopi_file_close $fd
+
+	echo "File  : $file"
+	echo "Schema: $DOMOPI_SCHEMA_NAME"
+	echo "Struct:"
+
+	local i=1
+	local _TMP=$(mktemp)
+	eval echo \${DOMOPI_SCHEMA_$DOMOPI_SCHEMA_NAME[@]} >$_TMP
+	while read -d ' ' key
+	do
+		echo -en "   $i\t$key"
+		case "$key" in
+		*ID)
+			echo -e "\tKEY, AUTO_INCREMENT"
+			;;
+		*U)
+			echo -e "\tUNIQUE"
+			;;
+		*)
+			echo ;;
+		esac
+		i=$((i+1))
+	done <$_TMP
+	rm -f $_TMP
+
+}
+
+
 
 #
 # Domopi conf file CRUD
 #
-# lista coppie key=value per chiavi ricerca (AND)
+#	$1 - File
+#	$2-n - Colonne da visualizzare
+#	$n-m - Clausole da rispettare
+#
+#	x è considerato null
+#
+#	lista di nomi colonne per la select
+#	lista coppie key=value per chiavi ricerca (AND)
+#
+#	Restituisce in STDOUT tabella nome=valore
+#	e nel contempo imposta variabili DOMOPI_nome
+#
+#	Esempio:
+#
+#	Match diretto
+#	_domopi_select_row global.cfg currentState sensorID=1
+#	Consente uso espressioni regolari:
+#	_domopi_select_row global.cfg currentState DescriptionU=Luce.*alta
 #
 function _domopi_select_row()
 {
+	file=$1
+	## Read schema
+	_domopi_file_open "$file"
+	fd=$?
+	_domopi_file_close $fd
+
+	shift
+	declare -A where
+	declare -A columns
+
+	for a in "$@"
+	do
+		# ricerca = per creare criterio ricerca
+		if [[ $a =~ .*=.* ]]; then
+			key="${a%%=*}"
+			value="${a##*=}"
+			where[$key]=$value
+		else
+			columns[$a]=1
+		fi
+	done
+
+	local row_to_match=""
+	local _TMP=$(mktemp)
+	eval echo \${DOMOPI_SCHEMA_$DOMOPI_SCHEMA_NAME[@]} >$_TMP
+	while read -d ' ' key
+	do
+		if [ -n "${where[$key]}" ]
+		then
+			row_to_match="$row_to_match${where[$key]}:"
+		else
+			row_to_match="${row_to_match}.*:"
+		fi
+	done <$_TMP
+
+	local columns_to_show=""
+	while read -d ' ' key
+	do
+		if [ -n "${columns[$key]}" ]
+		then
+			_domopi_column_by_name $DOMOPI_SCHEMA_NAME $key >/dev/null
+			columns_to_show="${columns_to_show}$DOMOPI_CONF_FILE_COL_NUMBER,"
+		fi
+	done <$_TMP
+
+	# rtrim ,
+	columns_to_show=${columns_to_show%"${columns_to_show##*[!,]}"}
+
+	if [ -n "$columns_to_show" ] ; then
+		grep -v '^#' "$file" | grep "$row_to_match" | cut -d: -f$columns_to_show > $_TMP
+		for key in ${!columns[@]}
+		do
+			read -d ':' value
+			echo $key=$value
+			eval DOMOPI_$key=\"\$value\"
+		done < $_TMP
+	fi
+
+	rm -f $_TMP
+
 	return 0
 }
 
@@ -368,9 +468,7 @@ function _domopi_insert_row()
 
 	shift
 
-	# processa argomenti (TODO:sarà _domopi_values ee _domopi_where
-
-	declare -A columns
+	declare -A values
 
 	for a in "$@"
 	do
@@ -392,18 +490,18 @@ function _domopi_insert_row()
 			fi
 		fi
 
-		columns[$key]=$value
+		values[$key]=$value
 	done
 
 	
-	row=""
+	local row=""
 	local _TMP=$(mktemp)
 	eval echo \${DOMOPI_SCHEMA_$DOMOPI_SCHEMA_NAME[@]} >$_TMP
 	while read -d ' ' key
 	do
-		if [ -n "${columns[$key]}" ]
+		if [ -n "${values[$key]}" ]
 		then
-			value="${columns[$key]}"
+			value="${values[$key]}"
 		else
 			value=
 			[[ "$key" =~ ID$ ]] && value=x
@@ -430,11 +528,81 @@ function _domopi_delete_row()
 #
 # Domopi conf file CRUD
 #
-# lista coppie key:value per i valori
+# lista coppie key:value per i valori da impostare
 # lista coppie key=value per chiavi ricerca (AND)
 #
 function _domopi_update_row()
 {
+	file=$1
+	## Read schema
+	_domopi_file_open "$file"
+	fd=$?
+	_domopi_file_close $fd
+
+	shift
+	declare -A where
+	declare -A columns
+
+	for a in "$@"
+	do
+		# ricerca = per criterio ricerca
+		if [[ $a =~ .*=.* ]]; then
+			key="${a%%=*}"
+			value="${a##*=}"
+			where[$key]=$value
+		fi
+		# ricerca : per set
+		if [[ $a =~ .*:.* ]]; then
+			key="${a%%:*}"
+			value="${a##*:}"
+echo $key=$value
+			if ! [[ "$key" =~ ID$ ]]; then
+				columns[$key]=$value
+			fi
+		fi
+	done
+
+	local row_to_match=""
+	local row_as_is=""
+	local _TMP=$(mktemp)
+	eval echo \${DOMOPI_SCHEMA_$DOMOPI_SCHEMA_NAME[@]} >$_TMP
+	while read -d ' ' key
+	do
+		if [ -n "${where[$key]}" ]
+		then
+			row_to_match="$row_to_match${where[$key]}:"
+		else
+			row_to_match="${row_to_match}.*:"
+		fi
+	done <$_TMP
+
+	local _TMP2=$(mktemp)
+	row_as_is=$( grep -v '^#' "$file" | grep "$row_to_match" )
+	# Calcola offset compreso header
+	row_number=$( grep -n "$row_to_match" "$file"| cut -d: -f1 )
+
+	local row_to_be=""
+	while read -d ' ' key
+	do
+		if [ -n "${columns[$key]}" ]
+		then
+			row_to_be="$row_to_be${columns[$key]}:"
+		else
+			# Deve recuperare il vero dato
+			_domopi_column_by_name "$DOMOPI_SCHEMA_NAME" "$key" >/dev/null
+			dato=$( echo $row_as_is | cut -d: -f$DOMOPI_CONF_FILE_COL_NUMBER )
+
+			row_to_be="${row_to_be}$dato:"
+		fi
+	done <$_TMP
+
+	# Solo se non match con intestazione
+	if [[ $row_number -gt 2 ]]; then
+		sed -i -e "${row_number}c$row_to_be" "$file"
+	fi
+
+	rm -f $_TMP $_TMP2
+
 	return 0
 }
 
@@ -574,9 +742,10 @@ function domopi_init()
 #	$1 - 'sensor', 'module' or 'group'
 #	$2 - name
 #
-#	-m moduleid
-#	-g groupid
-#	-w wiredPI
+#	-m moduleid TODO
+#	-g groupid TODO
+#	-w wiredPI TODO
+#	-s default state TODO
 #
 #
 public domopi_create
@@ -597,6 +766,46 @@ function domopi_create()
 	return 0
 }
 
+
+##
+#	Imposta stato di un sensore
+#
+#	$1 - SensorID
+#	$2 - New state
+#
+#	Non forza uso di alcun tipo (ouo' essere numerico o alfanumerico)
+#
+#	TODO: Implementare selettore per modulo e gruppo
+#
+#	Esempio: domopi_set_state 1 on
+#
+public domopi_set_state
+function domopi_set_state()
+{
+	_domopi_update_row "$DOMOPI_GLOBAL_CONF" currentState:$2 sensorID=$1
+}
+
+
+
+##
+#	Legge stato di un sensore
+#
+#	$1 - SensorID
+#	$? - state
+#
+#	Non forza uso di alcun tipo (ouo' essere numerico o alfanumerico)
+#
+#	Ritorna anche in stdout come coppia nome=valore
+#
+#	Esempio: domopi_set_state 1 off
+#
+#
+#	TODO: Implementare selettore per modulo e gruppo
+public domopi_get_state
+function domopi_get_state()
+{
+	_domopi_select_row "$DOMOPI_GLOBAL_CONF" currentState sensorID=$1
+}
 
 #-----------------------------------------------
 # End-of-API
