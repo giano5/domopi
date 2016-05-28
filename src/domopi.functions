@@ -160,6 +160,11 @@ function _release_file_descriptor()
 #private domopi_file_open
 function _domopi_file_open
 {
+	if [ ! -f "$1" ] ; then
+		echo "FATAL: No such file!" >&2
+		return 255
+	fi
+
 	_get_file_descriptor
 	fd=$?
 	eval "exec $fd<> \"$1\""
@@ -170,12 +175,14 @@ function _domopi_file_open
 		if [ "$(rtrim $FINGERPRINT)" != "$DOMOPI_FILE_FINGERPRINT" ]
 		then
 			echo "FATAL: Not a DOMOPI file!" >&2
-	echo $FINGERPRINT
+			echo $FINGERPRINT
+			_domopi_file_close $fd
 			return 255
 		fi
 		if [ -n "$2" ] && [ "$2" != "$SCHEMA" ]
 		then
 			echo "FATAL: Wrong DOMOPI $2 file!" >&2
+			_domopi_file_close $fd
 			return 255
 		fi
 
@@ -183,6 +190,7 @@ function _domopi_file_open
 			IFS='#:' read -r -a DOMOPI_SCHEMA_$SCHEMA <&$fd
 			if [ $? -ne 0 ]; then
 				echo "FATAL: missing schema" >&2
+				_domopi_file_close $fd
 				return 255
 			fi
 			DOMOPI_SCHEMA_NAME=$SCHEMA
@@ -201,7 +209,7 @@ function _domopi_file_open
 #private domopi_file_close
 function _domopi_file_close
 {
-	[ -n "$1" ] && eval "exec $1>&-" && _release_file_descriptor $1
+	[ -n "$1" -a $1 -ne 255 ] && eval "exec $1>&-" && _release_file_descriptor $1
 }
 
 
@@ -361,6 +369,10 @@ function _domopi_desc()
 #
 #	x è considerato null
 #
+#	-v Verbose mode (invece che tabellare) esprimei nomi delle variabili impostate
+#	-d<delim> Delimitatore per output tabellare (default)
+#
+#	Sintassi argomenti:
 #	lista di nomi colonne per la select
 #	lista coppie key=value per chiavi ricerca (AND)
 #
@@ -376,10 +388,26 @@ function _domopi_desc()
 #
 function _domopi_select_row()
 {
+	local VERBOSE=false
+	DELIMITER="\t"
+
+	# Processa opzioni locali
+	local OPTIND=1 OPTARG opt
+	while getopts ":vd:" opt; do
+		case $opt in
+		v)	VERBOSE=true ;;
+		d)	DELIMITER="$OPTARG" ;;
+		:)	echo argument required ; return ;;
+		esac
+	done
+	shift $((OPTIND-1))
+
+
 	file=$1
 	## Read schema
 	_domopi_file_open "$file"
 	fd=$?
+	#[ $fd -eq 255 ] && return 255	
 	_domopi_file_close $fd
 
 	shift
@@ -426,12 +454,24 @@ function _domopi_select_row()
 
 	if [ -n "$columns_to_show" ] ; then
 		grep -v '^#' "$file" | grep "$row_to_match" | cut -d: -f$columns_to_show > $_TMP
-		for key in ${!columns[@]}
+		i=0
+		while read row
 		do
-			read -d ':' value
-			echo $key=$value
-			eval DOMOPI_$key=\"\$value\"
+			IFS=: read -a row <<< "$row"
+			c=0
+			for key in ${!columns[@]}
+			do
+				$VERBOSE && echo -n $key[$i]=
+				echo -ne "${row[$c]}"
+				! $VERBOSE && echo -ne "$DELIMITER"
+				$VERBOSE && echo
+				eval DOMOPI_$key\[$i\]=\"\$\{row\[$c\]\}\"
+				c=$((c+1))
+			done
+			i=$((i+1))
+			! $VERBOSE && echo
 		done < $_TMP
+		$VERBOSE && echo "Read $i row(s)."
 	fi
 
 	rm -f $_TMP
@@ -464,6 +504,7 @@ function _domopi_insert_row()
 	# Read schema
 	_domopi_file_open "$file"
 	fd=$?
+	[ $fd -eq 255 ] && return 255	
 	_domopi_file_close $fd
 
 	shift
@@ -533,10 +574,23 @@ function _domopi_delete_row()
 #
 function _domopi_update_row()
 {
+	local VERBOSE=false
+
+	# Processa opzioni locali
+	local OPTIND=1 OPTARG opt
+	while getopts ":v" opt; do
+		case $opt in
+		v)	VERBOSE=true ;;
+		:)	echo argument required ; return ;;
+		esac
+	done
+	shift $((OPTIND-1))
+
 	file=$1
 	## Read schema
 	_domopi_file_open "$file"
 	fd=$?
+	[ $fd -eq 255 ] && return 255	
 	_domopi_file_close $fd
 
 	shift
@@ -555,12 +609,14 @@ function _domopi_update_row()
 		if [[ $a =~ .*:.* ]]; then
 			key="${a%%:*}"
 			value="${a##*:}"
-echo $key=$value
 			if ! [[ "$key" =~ ID$ ]]; then
 				columns[$key]=$value
 			fi
 		fi
 	done
+
+	# Non ci sono clausole di ricerca
+	[ ${#where[@]} -eq 0 ] && return
 
 	local row_to_match=""
 	local row_as_is=""
@@ -576,32 +632,45 @@ echo $key=$value
 		fi
 	done <$_TMP
 
-	local _TMP2=$(mktemp)
-	row_as_is=$( grep -v '^#' "$file" | grep "$row_to_match" )
-	# Calcola offset compreso header
-	row_number=$( grep -n "$row_to_match" "$file"| cut -d: -f1 )
-
-	local row_to_be=""
-	while read -d ' ' key
+	local _TABLE=$(mktemp)
+	local ARGS=""
+	local row
+	local rows_updated=0
+	grep -n "$row_to_match" "$file" >$_TABLE
+	while read row
 	do
-		if [ -n "${columns[$key]}" ]
-		then
-			row_to_be="$row_to_be${columns[$key]}:"
-		else
-			# Deve recuperare il vero dato
-			_domopi_column_by_name "$DOMOPI_SCHEMA_NAME" "$key" >/dev/null
-			dato=$( echo $row_as_is | cut -d: -f$DOMOPI_CONF_FILE_COL_NUMBER )
+		row_number=${row%%:*}
+		row_as_is=${row#*:}
 
-			row_to_be="${row_to_be}$dato:"
+		# Calcola offset compreso header
+		local row_to_be=""
+		while read -d ' ' key
+		do
+			if [ -n "${columns[$key]}" ]
+			then
+				row_to_be="$row_to_be${columns[$key]}:"
+			else
+				# Deve recuperare il vero dato
+				_domopi_column_by_name "$DOMOPI_SCHEMA_NAME" "$key" >/dev/null
+				dato=$( echo $row_as_is | cut -d: -f$DOMOPI_CONF_FILE_COL_NUMBER )
+
+				row_to_be="${row_to_be}$dato:"
+			fi
+		done <$_TMP
+		# Accumula riga di configurazione sed
+		if [ $row_number -gt 2 ]; then
+			ARGS="${ARGS}-e \"${row_number}c$row_to_be\" "
+			rows_updated=$((rows_updated+1))	
 		fi
-	done <$_TMP
+	done < $_TABLE
 
-	# Solo se non match con intestazione
-	if [[ $row_number -gt 2 ]]; then
-		sed -i -e "${row_number}c$row_to_be" "$file"
-	fi
+		# Solo se non match con intestazione
+		if [[ $rows_updated -gt 0 ]]; then
+			eval sed -ibak $ARGS "$file"
+		fi
+		$VERBOSE && echo "$rows_updated row(s) updated."
 
-	rm -f $_TMP $_TMP2
+	rm -f $_TMP $_TABLE
 
 	return 0
 }
