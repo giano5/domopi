@@ -876,6 +876,27 @@ function domopi_get_state()
 	_domopi_select_row "$DOMOPI_GLOBAL_CONF" currentState sensorID=$1
 }
 
+
+##
+# Lista degli oggetti di configurazioni selezionati per tipo
+#
+#	$1 - Tipo (sensor, module, group, ...)
+#
+public domopi_list
+function domopi_list()
+{
+	case "$1" in
+	sensor)
+		_domopi_select_row "$DOMOPI_GLOBAL_CONF" sensorID descriptionU
+		;;
+	*)
+		echo NON IMPLEMENTATO
+		;;
+	esac
+}
+
+
+
 #-----------------------------------------------
 # End-of-API
 #-----------------------------------------------

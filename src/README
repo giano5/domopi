@@ -18,3 +18,7 @@ domopi_ident
 domopi_create (parziale)
 domopi_get_state
 domopi_set_state
+
+
+PER UN ESEMPIO VEDERE:
+test.sh
