@@ -556,21 +556,102 @@ function _domopi_insert_row()
 }
 
 
+##
+#	Rimozione di righe in file di configurazione
 #
 # Domopi conf file CRUD
 #
-# lista coppie key=value per chiavi ricerca (AND)
+#	$1 - file
+#	$@ - lista coppie key=value per chiavi ricerca (AND)
+#	$? - 0 = cancellazione avvenuta, 1 = cancellazione non avvenuta, 255 = errore nella gestione file
 #
 function _domopi_delete_row()
 {
-	return 0
+	local VERBOSE=false
+
+	# Processa opzioni locali
+	local OPTIND=1 OPTARG opt
+	while getopts ":v" opt; do
+		case $opt in
+		v)	VERBOSE=true ;;
+		:)	echo argument required ; return ;;
+		esac
+	done
+	shift $((OPTIND-1))
+
+	file=$1
+	## Read schema
+	_domopi_file_open "$file"
+	fd=$?
+	[ $fd -eq 255 ] && return 255	
+	_domopi_file_close $fd
+
+	shift
+	declare -A where
+
+	for a in "$@"
+	do
+		# ricerca = per criterio ricerca
+		if [[ $a =~ .*=.* ]]; then
+			key="${a%%=*}"
+			value="${a##*=}"
+			# Il criterio deve essere espresso (sicurezza)
+			[ -n "$value" ] && where[$key]=$value
+		fi
+	done
+
+	# Non ci sono clausole di ricerca
+	[ ${#where[@]} -eq 0 ] && return 1
+
+	local row_to_match=""
+	local _TMP=$(mktemp)
+	eval echo \${DOMOPI_SCHEMA_$DOMOPI_SCHEMA_NAME[@]} >$_TMP
+	while read -d ' ' key
+	do
+		if [ -n "${where[$key]}" ]
+		then
+			row_to_match="$row_to_match${where[$key]}:"
+		else
+			row_to_match="${row_to_match}.*:"
+		fi
+	done <$_TMP
+
+
+	local _TABLE=$(mktemp)
+	local row local row_number
+	local rows_deleted=0
+	local ARGS=""
+	grep -n "$row_to_match" "$file" >$_TABLE
+	while read row
+	do
+		row_number=${row%%:*}
+		# Accumula riga di configurazione sed
+		if [ $row_number -gt 2 ]; then
+			ARGS="${ARGS}-e \"${row_number}d\" "
+			rows_deleted=$((rows_deleted+1))	
+		fi
+	done < $_TABLE
+
+	# Solo se non match con intestazione
+	if [[ $rows_deleted -gt 0 ]]; then
+		eval sed -i.bak $ARGS "$file"
+	fi
+	$VERBOSE && echo "$rows_deleted row(s) deleted."
+
+	rm -f $_TMP $_TABLE
+
+	[[ $rows_deleted -gt 0 ]] && return 0
+	return 1
 }
+
+
 
 #
 # Domopi conf file CRUD
 #
-# lista coppie key:value per i valori da impostare
-# lista coppie key=value per chiavi ricerca (AND)
+#	$1 - file di configurazione
+#	$@ lista coppie key:value per i valori da impostare,  lista coppie key=value per chiavi ricerca (AND)
+#	$? - 0 = aggiornamento avvenuto, 1 = aggiornamento non avvenuto, 255 = errore nella gestione file
 #
 function _domopi_update_row()
 {
@@ -616,7 +697,7 @@ function _domopi_update_row()
 	done
 
 	# Non ci sono clausole di ricerca
-	[ ${#where[@]} -eq 0 ] && return
+	[ ${#where[@]} -eq 0 ] && return 1
 
 	local row_to_match=""
 	local row_as_is=""
@@ -634,7 +715,7 @@ function _domopi_update_row()
 
 	local _TABLE=$(mktemp)
 	local ARGS=""
-	local row
+	local row row_number row_as_is row_to_be
 	local rows_updated=0
 	grep -n "$row_to_match" "$file" >$_TABLE
 	while read row
@@ -664,15 +745,16 @@ function _domopi_update_row()
 		fi
 	done < $_TABLE
 
-		# Solo se non match con intestazione
-		if [[ $rows_updated -gt 0 ]]; then
-			eval sed -ibak $ARGS "$file"
-		fi
-		$VERBOSE && echo "$rows_updated row(s) updated."
+	# Solo se non match con intestazione
+	if [[ $rows_updated -gt 0 ]]; then
+		eval sed -i.bak $ARGS "$file"
+	fi
+	$VERBOSE && echo "$rows_updated row(s) updated."
 
 	rm -f $_TMP $_TABLE
 
-	return 0
+	[[ $row_updated -gt 0 ]] && return 0
+	return 1
 }
 
 #
@@ -820,10 +902,25 @@ function domopi_init()
 public domopi_create
 function domopi_create()
 {
+	local VERBOSE=false
+	# Il file di configurazione deve esistere inizializzato
+
+	# Processa opzioni locali
+	local OPTIND=1 OPTARG opt
+	while getopts ":v" opt; do
+		case $opt in
+		v)	VERBOSE=true ;;
+		:)	echo argument required ; return ;;
+		esac
+	done
+	shift $((OPTIND-1))
 
 	case "$1" in
 	sensor)
 		_domopi_insert_row $DOMOPI_GLOBAL_CONF sensorID:'*' "descriptionU:$2"
+		;;
+	group)
+		_domopi_insert_row $DOMOPI_GLOBAL_CONF groupID:'*' "descriptionU:$2"
 		;;
 	*)
 		echo FATAL: not implemented >&2
@@ -831,18 +928,77 @@ function domopi_create()
 		;;
 	esac
 
-	# Il file di configurazione deve esistere inizializzato
 	return 0
 }
 
 
 ##
-#	Imposta stato di un sensore
+#	Distruzione di un oggetto di configurazione
 #
-#	$1 - SensorID
+#	Il criterio di ricerca è una espressione regolare
+#	sulla descrizione dell'oggetto. Utilizzare -n
+#	per utilizzare un criterio basato su ID numerico.
+#
+#	$1 - Tipo oggetto
+#	$2 - Criterio di ricerca
+#	-n - Criterio di ricerca numerico
+#
+public domopi_destroy
+function domopi_destroy()
+{
+	local VERBOSE=false
+	local NUMERIC=false
+	# Il file di configurazione deve esistere inizializzato
+
+	# Processa opzioni locali
+	local OPTIND=1 OPTARG opt
+	while getopts ":vn" opt; do
+		case $opt in
+		v)	VERBOSE=true ;;
+		n)	NUMERIC=true ;;
+		:)	echo argument required ; return ;;
+		esac
+	done
+	shift $((OPTIND-1))
+	case "$1" in
+	sensor)
+		if $NUMERIC ; then
+			_domopi_delete_row $DOMOPI_GLOBAL_CONF sensorID="$2"
+			ret=$?
+		else
+			_domopi_delete_row $DOMOPI_GLOBAL_CONF descriptionU="$2"
+			ret=$?
+		fi
+		if [ $ret -eq 0 ]; then
+			echo "Oggetto cancellato correttamente"
+		else
+			echo "Nessun oggetto cancellabile"
+		fi
+		;;
+	*)
+		echo FATAL: not implemented >&2
+		return 1
+		;;
+	esac
+
+	return 0
+}
+
+
+
+##
+#	Imposta stato di un sensore o un gruppo di sensori
+#
+#	$1 - Criterio di ricerca
 #	$2 - New state
+#	-g - Il criterio di ricerca si riferisce ad un gruppo
+#	-n - Usa criterio di ricerca numerico (ID) invece che espressione regolare su descrizione
 #
-#	Non forza uso di alcun tipo (ouo' essere numerico o alfanumerico)
+#	Non forza uso di alcun tipo (puo' essere numerico o alfanumerico)
+#	Un valore vuoto per lo stato non cancella lo stato corrente: se
+#	il sensore appartiene ad un gruppo eredita lo stato dal gruppo
+#	(il primo se appartiene a più gruppi)
+#
 #
 #	TODO: Implementare selettore per modulo e gruppo
 #
@@ -851,20 +1007,54 @@ function domopi_create()
 public domopi_set_state
 function domopi_set_state()
 {
-	_domopi_update_row "$DOMOPI_GLOBAL_CONF" currentState:$2 sensorID=$1
+	local NUMERIC=false
+	local GROUP=false
+	# Il file di configurazione deve esistere inizializzato
+
+	# Processa opzioni locali
+	local OPTIND=1 OPTARG opt
+	while getopts ":gn" opt; do
+		case $opt in
+		g)	GROUP=true ;;
+		n)	NUMERIC=true ;;
+		:)	echo argument required ; return ;;
+		esac
+	done
+	shift $((OPTIND-1))
+
+	if $GROUP ; then
+		if $NUMERIC ; then
+			_domopi_update_row "$DOMOPI_GLOBAL_CONF" currentState:$2 moduleID=x groupID=$1
+		else
+			_domopi_update_row "$DOMOPI_GLOBAL_CONF" currentState:$2 moduleID=x sensorID=x descriptionU="$1"
+		fi
+		# TODO: cercare tutti i sensori che appartengono al gruppo
+		#       e impostarelo stesso stato
+	else
+# TODO: se $2 è vuoto, occorre cercare stato del groupID primario per il
+# sensore
+		if $NUMERIC ; then
+			_domopi_update_row "$DOMOPI_GLOBAL_CONF" currentState:$2 moduleID=x sensorID=$1
+		else
+			_domopi_update_row "$DOMOPI_GLOBAL_CONF" currentState:$2 moduleID=x groupID=x descriptionU="$1"
+		fi
+	fi
 }
 
 
 
 ##
-#	Legge stato di un sensore
+#	Legge stato di un sensore o gruppo
 #
-#	$1 - SensorID
-#	$? - state
+#	$1 - Criterio di ricerca
+#	-g - Il criterio di ricerca si riferisce ad un gruppo
+#	-n - Usa criterio di ricerca numerico (ID) invece che espressione regolare su descrizione
 #
+#	Restituisce lo stato in STDOUT (potendo essere anche alfanumerico)
+#	Distribuito anche come ${DOMOPI_currentState[0]}
+#	Possibile avere elenco stati più oggetti secriterio non selettivo
 #	Non forza uso di alcun tipo (ouo' essere numerico o alfanumerico)
 #
-#	Ritorna anche in stdout come coppia nome=valore
 #
 #	Esempio: domopi_set_state 1 off
 #
@@ -873,7 +1063,36 @@ function domopi_set_state()
 public domopi_get_state
 function domopi_get_state()
 {
-	_domopi_select_row "$DOMOPI_GLOBAL_CONF" currentState sensorID=$1
+	local NUMERIC=false
+	local GROUP=false
+	# Il file di configurazione deve esistere inizializzato
+
+	# Processa opzioni locali
+	local OPTIND=1 OPTARG opt
+	while getopts ":gn" opt; do
+		case $opt in
+		g)	GROUP=true ;;
+		n)	NUMERIC=true ;;
+		:)	echo argument required ; return ;;
+		esac
+	done
+	shift $((OPTIND-1))
+
+	if $GROUP ; then
+		if $NUMERIC ; then
+			_domopi_select_row "$DOMOPI_GLOBAL_CONF" currentState groupID=$1
+		else
+			_domopi_select_row "$DOMOPI_GLOBAL_CONF" currentState sensorID=x descriptionU="$1"
+		fi
+	else
+		if $NUMERIC ; then
+			_domopi_select_row "$DOMOPI_GLOBAL_CONF" currentState sensorID=$1
+		else
+			_domopi_select_row "$DOMOPI_GLOBAL_CONF" currentState groupID=x descriptionU="$1"
+		fi
+	fi
+
+	return 0
 }
 
 
@@ -882,12 +1101,17 @@ function domopi_get_state()
 #
 #	$1 - Tipo (sensor, module, group, ...)
 #
+#	Indica ID, descrizione e stato
+#
 public domopi_list
 function domopi_list()
 {
 	case "$1" in
 	sensor)
-		_domopi_select_row "$DOMOPI_GLOBAL_CONF" sensorID descriptionU
+		_domopi_select_row "$DOMOPI_GLOBAL_CONF" sensorID descriptionU currentState groupID=x
+		;;
+	group)
+		_domopi_select_row "$DOMOPI_GLOBAL_CONF" groupID descriptionU currentState sensorID=x
 		;;
 	*)
 		echo NON IMPLEMENTATO

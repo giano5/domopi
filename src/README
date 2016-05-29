@@ -22,3 +22,40 @@ domopi_set_state
 
 PER UN ESEMPIO VEDERE:
 test.sh
+
+
+DESCRIZIONE
+
+La DOMOPI API è intesa per realizzare i seguenti obiettivi.
+1. Offrire un unico insieme di funzioni per la manipolazione 
+   di files di configurazione generici. [PARTE PRIVATA]
+2. Implementare specifiche operazioni su oggetti utili al progetto
+   DOMOPI appoggiandosi a file di configurazione predefiniti [PARTE PUBBLICA]
+
+
+I file di configurazione sono di tipo tabellare con delimitatore di campo due punti (:) e delimitatore di riga ritorno carrello (\n).
+Sono ammessi commenti intera riga (introdotti da carattere #).
+
+I files di configurazione sono gestiti grazie alla presenza al loro interno di una dichiarazione di struttura (schema) impostata dalla libreria al momento della creazione del file in un commento.
+Le prime dire righe nella strutturadel file sono commenti gestiti dalla libreria: non modificarli manualmente.
+
+Attualmente la libreria conosce solo il seguente schema:
+
+DOMOPI_FILE_SCHEMA['global']='# groupID:moduleID:sensorID:wiredPI:type:mode:maxExecutionTime:order:defaultState:currentState:descriptionU:alias:groups'
+
+utilizzato nel file di configurazione global.cfg per la definizione della maggiorparte degli oggetti necessari al progetto.
+
+La libreria agisce solo in ragione dello schema presente nel file, quindi
+eventuali cambiamenti nello schema non necessitano della manipolazione della
+libreria se non nella procedura di creazione del file (ovvero portare la nuova definizione dello schema). Quindi la libreria è sempre retro-compatibile nelle funzioni di gestione del file.
+Ovviamente potrebbero non esserlo le funzioni evolute.
+
+CRUD
+
+Le funzioni primitive di accesso ai file di configurazione implementano
+una interfaccia CRUD (Create Read Update Delete).
+
+I parametri delle funzioni hanno le seguenti convenzioni:
+ - coppie nome:valore indicano attributo e valore da impostare (create/update)
+ - coppie nome=valore indicano attributo da cercare (update/read/delete)
+ - nome  indica attributo da visualizzare (read)

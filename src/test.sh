@@ -4,11 +4,13 @@
 . domopi.functions
 
 
-echo "DOMOPI - Inizializzazione -------------------"
-echo
-echo "ATTENZIONE! Cancella configurazione esistente"
-echo -n "Inserire un nome per l'unità: "
-read NAME
+if [ ! -f global.cfg ]
+then
+	echo "DOMOPI - Inizializzazione -------------------"
+	echo
+	echo "ATTENZIONE! Cancella configurazione esistente"
+	echo -n "Inserire un nome per l'unità: "
+	read NAME
 
 # Fase inizializzazione dispositivo
 #
@@ -18,7 +20,17 @@ read NAME
 #		global.cfg	Configurazione da manipolare
 #
 #
-domopi_init "$NAME"
+	domopi_init "$NAME"
+else
+	echo "Utilizzo file global.cfg esistente"
+	echo
+	echo -n "Identity: "
+	domopi_ident
+	echo
+	echo Sensori configurari:
+	echo -e "ID\tDescription"
+	domopi_list sensor
+fi
 
 
 #
@@ -72,8 +84,9 @@ do
 	read ID
 	[[ "$ID" = "end" ]] && break;
 	echo -n "Stato corrente del sensore $ID: "
-	domopi_get_state $ID
+	domopi_get_state -n $ID
+	echo
 	echo -n "Nuovo stato del sensore $ID (lasciare vuoto per non cambiare): "
 	read STATE
-	[ -n "$STATE" ] && domopi_set_state $ID $STATE
+	[ -n "$STATE" ] && domopi_set_state -n $ID $STATE
 done
