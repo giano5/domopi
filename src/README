@@ -58,4 +58,5 @@ una interfaccia CRUD (Create Read Update Delete).
 I parametri delle funzioni hanno le seguenti convenzioni:
  - coppie nome:valore indicano attributo e valore da impostare (create/update)
  - coppie nome=valore indicano attributo da cercare (update/read/delete)
+	- valore può essere una lista separata da pipe (|)
  - nome  indica attributo da visualizzare (read)
