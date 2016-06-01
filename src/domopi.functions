@@ -38,7 +38,7 @@ DOMOPI_GLOBAL_CONF=$DOMOPI_CONF_PATH/global.cfg
 DOMOPI_FILE_FINGERPRINT='# Automatically generatedfile: do not modify!'
 
 # Schema is for generate initial configuration
-DOMOPI_FILE_SCHEMA['global']='# groupID:moduleID:sensorID:wiredPI:type:mode:maxExecutionTime:order:defaultState:currentState:descriptionU:alias:groups'
+DOMOPI_FILE_SCHEMA['global']='# groupID:moduleID:sensorID:patchin:patchout:wiredpi:type:mode:maxexecutiontime:order:defaultstate:currentstate:descriptionU:alias:groups'
 
 unset DOMOPI_FILE_DESCRIPTORS
 declare -a DOMOPI_FILE_DESCRIPTORS
@@ -160,6 +160,8 @@ function _release_file_descriptor()
 #private domopi_file_open
 function _domopi_file_open
 {
+	local SCHEMA
+	unset DOMOPI_SCHEMA_NAME
 	if [ ! -f "$1" ] ; then
 		echo "FATAL: No such file!" >&2
 		return 255
@@ -371,6 +373,7 @@ function _domopi_desc()
 #
 #	-v Verbose mode (invece che tabellare) esprimei nomi delle variabili impostate
 #	-d<delim> Delimitatore per output tabellare (default)
+#	-q  Sopprime intestazione colonne e indicazioni numero righe
 #
 #	Sintassi argomenti:
 #	lista di nomi colonne per la select
@@ -379,23 +382,28 @@ function _domopi_desc()
 #	Restituisce in STDOUT tabella nome=valore
 #	e nel contempo imposta variabili DOMOPI_nome
 #
+#	NOTA: Ordine di output delle colonne corrisponde alla posizione nel file, non nell'ordine fornito in input funzione [TODO ?]
+#
 #	Esempio:
 #
 #	Match diretto
-#	_domopi_select_row global.cfg currentState sensorID=1
+#	_domopi_select_row global.cfg currentstate sensorID=1
 #	Consente uso espressioni regolari:
-#	_domopi_select_row global.cfg currentState DescriptionU=Luce.*alta
+#	_domopi_select_row global.cfg currentstate descriptionU=Luce.*alta
 #
 function _domopi_select_row()
 {
 	local VERBOSE=false
 	DELIMITER="\t"
+	HEADER=true
+	FOOTER=true
 
 	# Processa opzioni locali
 	local OPTIND=1 OPTARG opt
-	while getopts ":vd:" opt; do
+	while getopts "d:qv" opt; do
 		case $opt in
-		v)	VERBOSE=true ;;
+		v)	VERBOSE=true ; HEADER=false ;;
+		q)	HEADER=false ; FOOTER=false ;;
 		d)	DELIMITER="$OPTARG" ;;
 		:)	echo argument required ; return ;;
 		esac
@@ -414,15 +422,19 @@ function _domopi_select_row()
 	declare -A where
 	declare -A columns
 
+	local position=0
+
 	for a in "$@"
 	do
 		# ricerca = per creare criterio ricerca
-		if [[ $a =~ .*=.* ]]; then
+		if [[ "$a" =~ .*=.* ]]; then
 			key="${a%%=*}"
 			value="${a##*=}"
 			where[$key]=$value
 		else
-			columns[$a]=1
+			unset DOMOPI_$a
+			columns[$a]=$position
+			position=$((position+1))
 		fi
 	done
 
@@ -439,42 +451,87 @@ function _domopi_select_row()
 		fi
 	done <$_TMP
 
-	local columns_to_show=""
+	local cut_fields=""
+	local column_reduced=0
+	declare -a columns_to_show
 	while read -d ' ' key
 	do
 		if [ -n "${columns[$key]}" ]
 		then
 			_domopi_column_by_name $DOMOPI_SCHEMA_NAME $key >/dev/null
-			columns_to_show="${columns_to_show}$DOMOPI_CONF_FILE_COL_NUMBER,"
+			cut_fields="${cut_fields}$DOMOPI_CONF_FILE_COL_NUMBER,"
+			columns_to_show[$column_reduced]=$key
+			column_reduced=$((column_reduced+1))
 		fi
 	done <$_TMP
 
 	# rtrim ,
-	columns_to_show=${columns_to_show%"${columns_to_show##*[!,]}"}
+	cut_fields=${cut_fields%"${cut_fields##*[!,]}"}
 
-	if [ -n "$columns_to_show" ] ; then
-		grep -v '^#' "$file" | grep "$row_to_match" | cut -d: -f$columns_to_show > $_TMP
-		i=0
+	# Prepariamo ordinamennto output
+	declare -a posizioni
+	for col in ${!columns[@]}
+	do
+		pos=${columns[$col]}
+		posizioni[$pos]=$col
+	done
+
+	# 
+	# NOTA: cut non riordina i campi estratti
+	if [ -n "$cut_fields" ] ; then
+		grep -v '^#' "$file" | grep "$row_to_match" | cut -d: -f$cut_fields > $_TMP
+		local i=0
+		local pos row
+		local colname
+
+		local SPOOL=$(mktemp)
+
+
+		if $HEADER; then
+		echo
+		for pos in ${!posizioni[@]}
+		do
+			echo -ne "${posizioni[$pos]}$DELIMITER"
+		done
+		echo
+		echo 
+		fi	> $SPOOL
+
 		while read row
 		do
 			IFS=: read -a row <<< "$row"
+			local c=0
 			c=0
-			for key in ${!columns[@]}
+
+			# Output ordinato
+			for pos in ${!posizioni[@]}
 			do
-				$VERBOSE && echo -n $key[$i]=
-				echo -ne "${row[$c]}"
+				colname=${posizioni[$pos]}	
+				local index
+				# Index of value
+				for idx in ${!columns_to_show[@]}
+				do
+					[ ${columns_to_show[$idx]} == $colname ] && index=$idx && break
+				done
+				$VERBOSE && echo -n $colname[$i]=
+
+				# Per columns occorre che un campo sia non vuoto
+				[ -n "${row[$index]}" ] && echo -ne ${row[$index]} || echo -ne ' '
 				! $VERBOSE && echo -ne "$DELIMITER"
 				$VERBOSE && echo
-				eval DOMOPI_$key\[$i\]=\"\$\{row\[$c\]\}\"
+				eval DOMOPI_$colname\[$i\]=\"\$\{row[$index]\}\"
 				c=$((c+1))
 			done
+
 			i=$((i+1))
-			! $VERBOSE && echo
-		done < $_TMP
-		$VERBOSE && echo "Read $i row(s)."
+			echo
+		done < $_TMP >>$SPOOL
+
+		$FOOTER && echo "$i row(s) selected." >>$SPOOL
+		column -t -s $'\t' $SPOOL
 	fi
 
-	rm -f $_TMP
+	rm -f $_TMP $SPOOL
 
 	return 0
 }
@@ -592,7 +649,7 @@ function _domopi_delete_row()
 	for a in "$@"
 	do
 		# ricerca = per criterio ricerca
-		if [[ $a =~ .*=.* ]]; then
+		if [[ "$a" =~ .*=.* ]]; then
 			key="${a%%=*}"
 			value="${a##*=}"
 			# Il criterio deve essere espresso (sicurezza)
@@ -681,17 +738,17 @@ function _domopi_update_row()
 	for a in "$@"
 	do
 		# ricerca = per criterio ricerca
-		if [[ $a =~ .*=.* ]]; then
+		if [[ "$a" =~ .*=.* ]]; then
 			key="${a%%=*}"
 			value="${a##*=}"
-			where[$key]=$value
+			where[$key]="$value"
 		fi
 		# ricerca : per set
-		if [[ $a =~ .*:.* ]]; then
+		if [[ "$a" =~ .*:.* ]]; then
 			key="${a%%:*}"
 			value="${a##*:}"
 			if ! [[ "$key" =~ ID$ ]]; then
-				columns[$key]=$value
+				columns[$key]="$value"
 			fi
 		fi
 	done
@@ -717,7 +774,8 @@ function _domopi_update_row()
 	local ARGS=""
 	local row row_number row_as_is row_to_be
 	local rows_updated=0
-	grep -n "$row_to_match" "$file" >$_TABLE
+	egrep -n "$row_to_match" "$file" >$_TABLE
+
 	while read row
 	do
 		row_number=${row%%:*}
@@ -737,7 +795,8 @@ function _domopi_update_row()
 
 				row_to_be="${row_to_be}$dato:"
 			fi
-		done <$_TMP
+		done < $_TMP
+
 		# Accumula riga di configurazione sed
 		if [ $row_number -gt 2 ]; then
 			ARGS="${ARGS}-e \"${row_number}c$row_to_be\" "
@@ -897,27 +956,34 @@ function domopi_init()
 #	-g groupid TODO
 #	-w wiredPI TODO
 #	-s default state TODO
+#	-i <patchIn>
+#	-o <patchOut>
 #
+#	@author Andrea Tassotti
 #
 public domopi_create
 function domopi_create()
 {
 	local VERBOSE=false
+	local PATCH
 	# Il file di configurazione deve esistere inizializzato
 
 	# Processa opzioni locali
 	local OPTIND=1 OPTARG opt
-	while getopts ":v" opt; do
+	while getopts ":vi:o:" opt; do
 		case $opt in
 		v)	VERBOSE=true ;;
+		i)	PATCH="patchin:$OPTARG" ;;
+		o)	PATCH="patchout:$OPTARG" ;;
 		:)	echo argument required ; return ;;
 		esac
 	done
 	shift $((OPTIND-1))
+echo $@
 
 	case "$1" in
 	sensor)
-		_domopi_insert_row $DOMOPI_GLOBAL_CONF sensorID:'*' "descriptionU:$2"
+		_domopi_insert_row $DOMOPI_GLOBAL_CONF sensorID:'*' "descriptionU:$2" "$PATCH"
 		;;
 	group)
 		_domopi_insert_row $DOMOPI_GLOBAL_CONF groupID:'*' "descriptionU:$2"
@@ -942,6 +1008,8 @@ function domopi_create()
 #	$1 - Tipo oggetto
 #	$2 - Criterio di ricerca
 #	-n - Criterio di ricerca numerico
+#
+#	@author Andrea Tassotti
 #
 public domopi_destroy
 function domopi_destroy()
@@ -986,6 +1054,69 @@ function domopi_destroy()
 
 
 
+#
+#	$1 - sensorID
+#	$2 - New state
+#
+# TODO: Supportare gruppi e moduli
+#
+#	@author Andrea Tassotti
+#
+function _domopi_do_transition_by_id()
+{
+	_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" currentstate patchin sensorID=$1 >/dev/null
+
+	# No transition
+	[[ $2 = ${DOMOPI_currentstate[0]} ]] && return 1
+
+	# No propagation
+	[ -z "${DOMOPI_patchin[0]}" ] && return 0
+
+	# Propagation
+	echo propagation
+	_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" sensorID patchout=${DOMOPI_patchin[0]} > /dev/null
+
+	# TODO: Divenga _domopi_where_in	
+	in=$( echo ${DOMOPI_sensorID[@]} | tr ' ' '|' )
+	echo propaga transizione $2 ai sensori ${DOMOPI_sensorID[@]}
+	_domopi_update_row -v "$DOMOPI_GLOBAL_CONF" currentstate:$2 moduleID=x sensorID=$in
+
+	return 0
+}
+
+
+#
+#	$1 - description
+#	$2 - New state
+#
+# TODO: Supportare gruppi e moduli
+#
+#	@author Andrea Tassotti
+#
+function _domopi_do_transition_by_name()
+{
+	_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" currentstate patchin $criptionU >/dev/null
+
+	# No transition
+	[[ $2 = ${DOMOPI_currentstate[0]} ]] && return 1
+
+	# No propagation
+	[ -z "${DOMOPI_patchin[0]}" ] && return 0
+
+	# Propagation
+	echo propagation
+	_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" sensorID patchout=${DOMOPI_patchin[0]} > /dev/null
+
+	# TODO: Divenga _domopi_where_in	
+	in=$( echo ${DOMOPI_sensorID[@]} | tr ' ' '|' )
+	echo propaga transizione $2 ai sensori ${DOMOPI_sensorID[@]}
+	_domopi_update_row -v "$DOMOPI_GLOBAL_CONF" currentstate:$2 moduleID=x sensorID=$in
+
+	return 0
+}
+
+
+
 ##
 #	Imposta stato di un sensore o un gruppo di sensori
 #
@@ -998,17 +1129,22 @@ function domopi_destroy()
 #	Un valore vuoto per lo stato non cancella lo stato corrente: se
 #	il sensore appartiene ad un gruppo eredita lo stato dal gruppo
 #	(il primo se appartiene a più gruppi)
+#	Aggiorna gli stati di tutti i sensori con patchout pari al patchin
+#	del sensore su cui è applicato
 #
 #
 #	TODO: Implementare selettore per modulo e gruppo
 #
 #	Esempio: domopi_set_state 1 on
 #
+#	@author Andrea Tassotti
+#
 public domopi_set_state
 function domopi_set_state()
 {
 	local NUMERIC=false
 	local GROUP=false
+	local ret=1
 	# Il file di configurazione deve esistere inizializzato
 
 	# Processa opzioni locali
@@ -1024,9 +1160,11 @@ function domopi_set_state()
 
 	if $GROUP ; then
 		if $NUMERIC ; then
-			_domopi_update_row "$DOMOPI_GLOBAL_CONF" currentState:$2 moduleID=x groupID=$1
+			echo group numeric
+			#_domopi_update_row "$DOMOPI_GLOBAL_CONF" currentstate:$2 moduleID=x groupID=$1
 		else
-			_domopi_update_row "$DOMOPI_GLOBAL_CONF" currentState:$2 moduleID=x sensorID=x descriptionU="$1"
+			echo group description
+			#_domopi_update_row "$DOMOPI_GLOBAL_CONF" currentstate:$2 moduleID=x sensorID=x descriptionU="$1"
 		fi
 		# TODO: cercare tutti i sensori che appartengono al gruppo
 		#       e impostarelo stesso stato
@@ -1034,11 +1172,17 @@ function domopi_set_state()
 # TODO: se $2 è vuoto, occorre cercare stato del groupID primario per il
 # sensore
 		if $NUMERIC ; then
-			_domopi_update_row "$DOMOPI_GLOBAL_CONF" currentState:$2 moduleID=x sensorID=$1
+			_domopi_do_transition_by_id $1 $2
+			ret=$?
+			[ $ret -eq 0 ] && _domopi_update_row "$DOMOPI_GLOBAL_CONF" currentstate:$2 moduleID=x sensorID=$1
 		else
-			_domopi_update_row "$DOMOPI_GLOBAL_CONF" currentState:$2 moduleID=x groupID=x descriptionU="$1"
+			_domopi_do_transition_by_name $1 $2
+			ret=$?
+			[ $ret -eq 0 ] && _domopi_update_row "$DOMOPI_GLOBAL_CONF" currentstate:$2 moduleID=x groupID=x descriptionU="$1"
 		fi
 	fi
+
+	return $ret
 }
 
 
@@ -1051,7 +1195,7 @@ function domopi_set_state()
 #	-n - Usa criterio di ricerca numerico (ID) invece che espressione regolare su descrizione
 #
 #	Restituisce lo stato in STDOUT (potendo essere anche alfanumerico)
-#	Distribuito anche come ${DOMOPI_currentState[0]}
+#	Distribuito anche come ${DOMOPI_currentstate[0]}
 #	Possibile avere elenco stati più oggetti secriterio non selettivo
 #	Non forza uso di alcun tipo (ouo' essere numerico o alfanumerico)
 #
@@ -1060,6 +1204,9 @@ function domopi_set_state()
 #
 #
 #	TODO: Implementare selettore per modulo e gruppo
+#
+#	@author Andrea Tassotti
+#
 public domopi_get_state
 function domopi_get_state()
 {
@@ -1080,15 +1227,15 @@ function domopi_get_state()
 
 	if $GROUP ; then
 		if $NUMERIC ; then
-			_domopi_select_row "$DOMOPI_GLOBAL_CONF" currentState groupID=$1
+			_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" currentstate groupID=$1
 		else
-			_domopi_select_row "$DOMOPI_GLOBAL_CONF" currentState sensorID=x descriptionU="$1"
+			_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" currentstate sensorID=x descriptionU="$1"
 		fi
 	else
 		if $NUMERIC ; then
-			_domopi_select_row "$DOMOPI_GLOBAL_CONF" currentState sensorID=$1
+			_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" currentstate sensorID=$1
 		else
-			_domopi_select_row "$DOMOPI_GLOBAL_CONF" currentState groupID=x descriptionU="$1"
+			_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" currentstate groupID=x descriptionU="$1"
 		fi
 	fi
 
@@ -1103,15 +1250,17 @@ function domopi_get_state()
 #
 #	Indica ID, descrizione e stato
 #
+#	@author Andrea Tassotti
+#
 public domopi_list
 function domopi_list()
 {
 	case "$1" in
 	sensor)
-		_domopi_select_row "$DOMOPI_GLOBAL_CONF" sensorID descriptionU currentState groupID=x
+		_domopi_select_row "$DOMOPI_GLOBAL_CONF" sensorID descriptionU currentstate patchin patchout groupID=x
 		;;
 	group)
-		_domopi_select_row "$DOMOPI_GLOBAL_CONF" groupID descriptionU currentState sensorID=x
+		_domopi_select_row "$DOMOPI_GLOBAL_CONF" groupID descriptionU currentstate sensorID=x
 		;;
 	*)
 		echo NON IMPLEMENTATO
@@ -1160,18 +1309,4 @@ unset $DOMOPI_PRIVATE_FUNC_LIST
 # 
 # Il passaggio argomenti è ovviamente consentito come per ogni funzione bash.
 # 
-
-# lgrcreate.sh
-# lgrremove.sh
-# lseadd.sh
-# lsedel.sh
-# lsemod.sh
-# mgrcreate.sh
-# mgrremove.sh
-# mgrmod.sh
-# mgradd.sh
-# mgrdel.sh
-# mgrlist.sh
-# round.sh
-
 
