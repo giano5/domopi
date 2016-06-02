@@ -120,6 +120,7 @@ function no_spaces()
 #
 function _get_file_descriptor()
 {
+	local i
 	for((i=0;i<${#DOMOPI_FILE_DESCRIPTORS};i++))
 	do
 		if [[ ${DOMOPI_FILE_DESCRIPTORS[$i]} != 'opened' ]]
@@ -567,6 +568,7 @@ function _domopi_insert_row()
 	shift
 
 	declare -A values
+	local a
 
 	for a in "$@"
 	do
@@ -966,6 +968,7 @@ function domopi_create()
 {
 	local VERBOSE=false
 	local PATCH
+	local ret
 	# Il file di configurazione deve esistere inizializzato
 
 	# Processa opzioni locali
@@ -979,14 +982,15 @@ function domopi_create()
 		esac
 	done
 	shift $((OPTIND-1))
-echo $@
 
 	case "$1" in
 	sensor)
 		_domopi_insert_row $DOMOPI_GLOBAL_CONF sensorID:'*' "descriptionU:$2" "$PATCH"
+		ret=$?
 		;;
 	group)
 		_domopi_insert_row $DOMOPI_GLOBAL_CONF groupID:'*' "descriptionU:$2"
+		ret=$?
 		;;
 	*)
 		echo FATAL: not implemented >&2
@@ -994,7 +998,7 @@ echo $@
 		;;
 	esac
 
-	return 0
+	return $ret
 }
 
 
