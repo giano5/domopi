@@ -39,6 +39,8 @@ DOMOPI_FILE_FINGERPRINT='# Automatically generatedfile: do not modify!'
 
 # Schema is for generate initial configuration
 DOMOPI_FILE_SCHEMA['global']='# groupID:moduleID:sensorID:patchin:patchout:wiredpi:type:mode:maxexecutiontime:order:defaultstate:currentstate:descriptionU:alias:groups'
+# NOTA: In caso di bash < 4.2 dichiarare a questo livello
+#declare -A DOMOPI_SCHEMA_COL_global
 
 unset DOMOPI_FILE_DESCRIPTORS
 declare -a DOMOPI_FILE_DESCRIPTORS
@@ -147,7 +149,7 @@ function _release_file_descriptor()
 #
 #
 #	Restituisce una variabile DOMOPI_SCHEMA_<nome schema>
-#	letta dal filee contenente nomi colonne file
+#	letta dal file contenente nomi colonne file
 #	Restituisce anche DOMOPI_SCHEMA_NAME
 #
 #	$1 - File name
@@ -196,6 +198,18 @@ function _domopi_file_open
 				_domopi_file_close $fd
 				return 255
 			fi
+
+			# Ribalta le informazioni in un array associativo
+			unset DOMOPI_SCHEMA_COL_$SCHEMA
+			declare -Ag DOMOPI_SCHEMA_COL_$SCHEMA
+			local colIdx=1
+			local DOMOPI_SCHEMA=$( eval echo \${DOMOPI_SCHEMA_$SCHEMA[@]} )
+			for col in $DOMOPI_SCHEMA
+			do
+				eval "DOMOPI_SCHEMA_COL_$SCHEMA[$col]=$colIdx"
+				colIdx=$((colIdx + 1))
+			done
+
 			DOMOPI_SCHEMA_NAME=$SCHEMA
 		fi
 	fi
@@ -212,6 +226,8 @@ function _domopi_file_open
 #private domopi_file_close
 function _domopi_file_close
 {
+	# Solo se riposizioniamo le chiamate di domopi_file_close
+	#unset DOMOPI_SCHEMA_$SCHEMA
 	[ -n "$1" -a $1 -ne 255 ] && eval "exec $1>&-" && _release_file_descriptor $1
 }
 
@@ -252,23 +268,10 @@ function _domopi_file_read_token()
 #private domopi_column_by_name
 function _domopi_column_by_name()
 {
-	unset DOMOPI_CONF_FILE_COL_NUMBER
-	[ $# -lt 2 ] && return 2
-
-	if [ $# -eq 2 ]
-	then
-		local colIdx=1
-		DOMOPI_SCHEMA=$( eval echo \${DOMOPI_SCHEMA_$1[@]} )
-		for col in $DOMOPI_SCHEMA
-		do
-			if [[ "${col,,}" = "${2,,}" ]]
-			then
-				echo $colIdx
-				DOMOPI_CONF_FILE_COL_NUMBER=$colIdx
-				return 0
-			fi
-			colIdx=$((colIdx + 1))
-		done
+	if [ $# -eq 2 ]; then
+		DOMOPI_CONF_FILE_COL_NUMBER=$( eval echo \${DOMOPI_SCHEMA_COL_$1[$2]} )
+		echo $DOMOPI_CONF_FILE_COL_NUMBER
+		return 0
 	else
 		echo FATAL: missing arguments >&2
 		return 255
