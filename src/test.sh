@@ -5,6 +5,7 @@
 
 
 COLOR_BLUE='\033[34m'
+COLOR_RED='\033[1;31m'
 COLOR_RESET='\033[0m'
 
 function notice()
@@ -41,7 +42,6 @@ function init()
 		echo
 		echo -n "Identity: "
 		domopi_ident
-		CURRENT_PAGE="second_page $CURRENT_PAGE" 
 	fi
 }
 
@@ -76,6 +76,32 @@ function create()
 	done
 }
 
+function create_mult()
+{
+	echo
+	echo "Creazione sensori multipli:"
+
+	echo -n "Nome del sensore (default=SENSOR): "
+	read DESC
+
+	echo -n "Patch number: "
+	read PATCH
+	echo -n "IN/OUT (digitare 'i' oppure 'o' )? "
+	read VERSO
+
+	echo
+	echo -n "Indicare quantità (default=10): "
+	read COUNT
+	echo -n "Genero sensori "
+	for((i=1;i<=${COUNT:-10};i++))
+	do
+		domopi_create -${VERSO:-o} "$PATCH" sensor "${DESC:-SENSOR}_$i" 2>/dev/null
+		[ $? -eq 0 ] && echo -n . || echo -n '!'
+	done
+	echo
+	notice 'Opeazione conclusa con successo'
+}
+
 
 #
 # Lista sensori (ID e descrizione)
@@ -85,7 +111,7 @@ function list()
 	echo
 	echo Sensori configurari:
 	echo
-	domopi_list sensor
+	domopi_list sensor | more
 	notice
 }
 
@@ -126,14 +152,33 @@ function state_simulation()
 }
 
 
+#-----------------------------------------------------------
+# Gestion pagine
+#
+#	Ogni funzione <nome> rappresenta il menu
+#	Ogni funzione <nome>_<op> rappresenta operazione
+#
+#	La variabile CURRENT_PAGE contiene la pila navigazione
+#	pagine con il nome della pagina corrente in testa
+#
+#	Nel caso di pagine intermedie la funzione di operazione
+#	implementa il cambio pagina introducendo il nome della
+#	sottopagina (es CURRENT_PAGE="create_page $CURRENT_PAGE" )
+#
+function header()
+{
+	clear
+	echo 'DOMOPI TEST PROGRAM'
+	echo '----------------------------'
+}
+
+
 #
 #
 #
 function master_page()
 {
-	clear
-	echo 'DOMOPI TEST PROGRAM'
-	echo '----------------------------'
+	header
 	echo '[1] - Inizializzazione'
 	echo '[2] - Creazione sensore'
 	echo '[3] - Lista sensori'
@@ -141,40 +186,91 @@ function master_page()
 	echo '[q] - Quit'
 }
 
-function second_page()
+function master_page_1()
 {
-	echo
+	init
+	CURRENT_PAGE="init_page $CURRENT_PAGE" 
+}
+
+function master_page_2()
+{
+	CURRENT_PAGE="create_page $CURRENT_PAGE" 
+}
+
+function master_page_3()
+{
+	list
+}
+
+function master_page_4()
+{
+	state_simulation 
+}
+
+function init_page()
+{
+	header
 	echo '[1] - Rimuovi identità esistente'
-	echo '[3] - Lista sensori'
+	echo '[2] - Lista sensori'
 	echo '[q] - Indietro'
 }
 
-# MAIN PROGRAM -------------
+function init_page_1()
+{
+	rm -f ident.cfg global.cfg	
+	read POP CURRENT_PAGE <<< "$CURRENT_PAGE"
+}
+
+function init_page_2()
+{
+	list
+}
+
+function create_page()
+{
+	header
+	echo '[1] - Crea oggetti liberamente'
+	echo '[2] - Crea serie di oggetti'
+	echo '[q] - Indietro'
+}
+
+
+function create_page_1()
+{
+	create
+}
+
+function create_page_2()
+{
+	create_mult
+}
+
+
+#
+# MAIN PROGRAM ----------------------------------------
+#
 
 SHUTDOWN=false
 CURRENT_PAGE=master_page
 while ! $SHUTDOWN
 do
-	$CURRENT_PAGE
+	${CURRENT_PAGE}
 	echo -ne "Seleziona una funzione: "
-	read
-	case "$REPLY" in
-	1)	if [[ "$CURRENT_PAGE" = "master_page" ]]; then	
-			init
-		else
-			rm -f ident.cfg global.cfg	
-			read POP CURRENT_PAGE <<< "$CURRENT_PAGE"
-		fi
-				;;
-	2)	create	;;
-	3)	list	;;
-	4)	state_simulation ;;
-	q)	# Ritorno a pagina superiore o temine
+	read OP
+	[ -z "$OP" ] && continue
+	if [ $OP = "q" ]; then
+		# Ritorno a pagina superiore o temine
 		read POP CURRENT_PAGE <<< "$CURRENT_PAGE"
-		[ -z "$CURRENT_PAGE" ] && SHUTDOWN=true;;
-	*)
-		;;
-	esac
+		[ -z "$CURRENT_PAGE" ] && SHUTDOWN=true
+		continue
+	fi
+	read POP REST <<< "$CURRENT_PAGE"
+ 	if declare -F | grep -q ${POP}_$OP ; then	
+		${POP}_$OP
+	else
+		echo -e "${COLOR_RED}NON IMPLEMENTATO${COLOR_RESET}"
+	fi
+
 done
 
 echo Bye
