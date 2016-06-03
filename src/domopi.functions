@@ -27,8 +27,10 @@
 DOMOPI_CONF_PATH=.
 DOMOPI_BIN_PATH=.
 # Percorso istallazione di questo file (ad uso interno)
-DOMOPI_API_PATH=~/repo/domopi/src/domopi.functions
+DOMOPI_API_PATH=domopi.functions
 
+# Requisiti
+DOMOPI_REQUIRES="awk bc cut egrep grep sed tr"
 
 declare -A DOMOPI_FILE_SCHEMA
 
@@ -872,6 +874,50 @@ function domopi_man
 /^#.*[\$][0-9\?]+/	{ if (incomment) { par=""; for(i=2;i<=NF;i++) par=par" "$i; h[$2]=par; next; } }
 /^function /		{ if ( incomment && $2 == "'"$1()"'" ) { print "Funzione   : "$2; print "Sommario   : "summary; print "Descrizione: "text; print "Autore     : "author; for(v in note) print "Nota       : "note[v]; for(v in see) print "Vedi       : "see[v]; print "Parametri  :"; for(v in h) print h[v]; print "Opzioni    :"; for(v in o) print o[v]    ; print ""; } incomment=0; delete h; delete o; delete note; delete see; getline; }
 					{ if ( incomment ) { if ( insummary ) { summary=""; for(i=2;i<=NF;i++) summary=summary$i" "; } else { for(i=2;i<=NF;i++) text=text$i" "; } } } ' $DOMOPI_API_PATH
+}
+
+
+##
+#	Avvia timer per tracciamento durata operazione
+#
+#	$1 - (opzionale) Nome del timer
+#
+#	@author	Andrea Tassotti
+#
+function domopi_timer_start()
+{
+	declare -g DOMOPI_OP_START_TIME_$1
+	eval DOMOPI_OP_START_TIME_$1=$( date '+%s%N' )
+}
+
+
+##
+#	Mostra tempo impiegato da operazione in msec
+#
+#	$1 - (opzionale) Nome del timer
+#
+#	@author	Andrea Tassotti
+#
+function domopi_time_elapsed()
+{
+	DOMOPI_OP_END_TIME=$( date '+%s%N' )
+	eval START=\$DOMOPI_OP_START_TIME_$1
+	[ -z "$DOMOPI_OP_START_TIME_$1" ] && return 1
+	time=$( echo "( $DOMOPI_OP_END_TIME - $START ) / 1000000" | bc )
+	domopi_notice "Operazione '${1:-anonymous}' conclusa in $time msec"
+}
+
+
+##
+#
+#
+#
+function domopi_notice()
+{
+	echo
+	echo $@
+	echo 'Premi invio per proseguire'
+	read
 }
 
 

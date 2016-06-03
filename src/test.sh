@@ -8,35 +8,6 @@ COLOR_BLUE='\033[34m'
 COLOR_RED='\033[1;31m'
 COLOR_RESET='\033[0m'
 
-function usec2msec()
-{
-	echo $1 / 1000000 | bc
-}
-
-function utime()
-{
-	date '+%s%N'
-}
-
-function difftime()
-{
-	echo "$2 - $1" | bc
-}
-
-function report_time()
-{
-	time=$( difftime $1 $2 )
-	notice "Operazione conclusa in $( usec2msec $time ) msec"
-}
-
-function notice()
-{
-	echo
-	echo $@
-	echo 'Premi invio per proseguire'
-	read
-}
-
 
 function init()
 {
@@ -57,7 +28,7 @@ function init()
 #
 #
 		domopi_init "$NAME"
-		notice 'Opeazione conclusa con successo'
+		domopi_notice 'Opeazione conclusa con successo'
 	else
 		echo "Utilizzo file global.cfg esistente"
 		echo
@@ -93,10 +64,9 @@ function create()
 		echo -n "Patch number: "
 		read PATCH
 	
-		start=$(utime)
+		domopi_timer_start create
 		domopi_create -$VERSO "$PATCH" sensor "$DESC"
-		stop=$(utime)
-		report_time $start $stop
+		domopi_time_elapsed create
 	done
 }
 
@@ -123,7 +93,7 @@ function create_mult()
 		[ $? -eq 0 ] && echo -n . || echo -n '!'
 	done
 	echo
-	notice 'Opeazione conclusa con successo'
+	domopi_notice 'Opeazione conclusa con successo'
 }
 
 
@@ -136,7 +106,7 @@ function list()
 	echo Sensori configurari:
 	echo
 	domopi_list sensor | more
-	notice
+	domopi_notice
 }
 
 
@@ -166,11 +136,10 @@ function state_simulation()
 		echo -e $COLOR_RESET
 		echo -n "Nuovo stato del sensore $ID (lasciare vuoto per non cambiare): "
 		read STATE
-		start=$(utime)
+		domopi_timer_start set_state
 		[ -n "$STATE" ] && domopi_set_state -n $ID $STATE
-		stop=$(utime)
+		domopi_time_elapsed set_state
 		[ $? -ne 0 ] && echo Nessuna transizione di stato
-		report_time $start $stop
 		echo
 		echo Condizione generale del sistema
 		list
