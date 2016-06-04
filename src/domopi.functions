@@ -168,7 +168,7 @@ function _domopi_file_open
 	local SCHEMA
 	unset DOMOPI_SCHEMA_NAME
 	if [ ! -f "$1" ] ; then
-		echo "FATAL: No such file!" >&2
+		echo "FATAL: $1: No such file!" >&2
 		return 255
 	fi
 
@@ -204,7 +204,7 @@ function _domopi_file_open
 			# Ribalta le informazioni in un array associativo
 			unset DOMOPI_SCHEMA_COL_$SCHEMA
 			declare -Ag DOMOPI_SCHEMA_COL_$SCHEMA
-			local colIdx=1
+			local colIdx=0
 			local DOMOPI_SCHEMA=$( eval echo \${DOMOPI_SCHEMA_$SCHEMA[@]} )
 			for col in $DOMOPI_SCHEMA
 			do
@@ -295,10 +295,7 @@ function _domopi_column_by_name()
 #private domopi_seq_nextval
 function _domopi_seq_nextval()
 {
-	# Read schema
-	_domopi_file_open "$1"
-	fd=$?
-	_domopi_file_close $fd
+	[ -z "$DOMOPI_SCHEMA_NAME" ] && return 1
 
 	_domopi_column_by_name "$DOMOPI_SCHEMA_NAME" "$2" >/dev/null
 	[ -z "$DOMOPI_CONF_FILE_COL_NUMBER" ] && return 2
@@ -306,7 +303,7 @@ function _domopi_seq_nextval()
 	local ACTUAL_ID_TMP=$(mktemp)
 	local FULL_ID_TMP=$(mktemp)
 	
-	grep -v '^#' "$1" | cut -d: -f$DOMOPI_CONF_FILE_COL_NUMBER | egrep '^[0-9]+$' | sort -g | tee >$ACTUAL_ID_TMP
+	grep -v '^#' "$1" | cut -d: -f$((DOMOPI_CONF_FILE_COL_NUMBER + 1 ))| egrep '^[0-9]+$' | sort -g | tee >$ACTUAL_ID_TMP
 
 	local maxid=$(tail -1 $ACTUAL_ID_TMP)
 
@@ -345,9 +342,7 @@ function _domopi_desc()
 	echo "Struct:"
 
 	local i=1
-	local _TMP=$(mktemp)
-	eval echo \${DOMOPI_SCHEMA_$DOMOPI_SCHEMA_NAME[@]} >$_TMP
-	while read -d ' ' key
+	for key in  $( eval echo \${DOMOPI_SCHEMA_$DOMOPI_SCHEMA_NAME[@]} )
 	do
 		echo -en "   $i\t$key"
 		case "$key" in
@@ -361,8 +356,7 @@ function _domopi_desc()
 			echo ;;
 		esac
 		i=$((i+1))
-	done <$_TMP
-	rm -f $_TMP
+	done
 
 }
 
@@ -371,7 +365,7 @@ function _domopi_desc()
 #
 # Domopi conf file CRUD
 #
-#	$1 - File
+#	$1   - File di configurazione contenente la tabella
 #	$2-n - Colonne da visualizzare
 #	$n-m - Clausole da rispettare
 #
@@ -404,6 +398,8 @@ function _domopi_select_row()
 	HEADER=true
 	FOOTER=true
 
+	[ -z "$DOMOPI_SCHEMA_NAME" ] && return 1
+
 	# Processa opzioni locali
 	local OPTIND=1 OPTARG opt
 	while getopts "d:qv" opt; do
@@ -416,14 +412,7 @@ function _domopi_select_row()
 	done
 	shift $((OPTIND-1))
 
-
 	file=$1
-	## Read schema
-	_domopi_file_open "$file"
-	fd=$?
-	#[ $fd -eq 255 ] && return 255	
-	_domopi_file_close $fd
-
 	shift
 	declare -A where
 	declare -A columns
@@ -445,9 +434,8 @@ function _domopi_select_row()
 	done
 
 	local row_to_match=""
-	local _TMP=$(mktemp)
-	eval echo \${DOMOPI_SCHEMA_$DOMOPI_SCHEMA_NAME[@]} >$_TMP
-	while read -d ' ' key
+
+	for key in  $( eval echo \${DOMOPI_SCHEMA_$DOMOPI_SCHEMA_NAME[@]} )
 	do
 		if [ -n "${where[$key]}" ]
 		then
@@ -455,21 +443,24 @@ function _domopi_select_row()
 		else
 			row_to_match="${row_to_match}.*:"
 		fi
-	done <$_TMP
+	done
+	# Trim : right
+	row_to_match=${row_to_match%"${row_to_match##*[!:]}"}
 
 	local cut_fields=""
 	local column_reduced=0
 	declare -a columns_to_show
-	while read -d ' ' key
+
+	for key in  $( eval echo \${DOMOPI_SCHEMA_$DOMOPI_SCHEMA_NAME[@]} )
 	do
 		if [ -n "${columns[$key]}" ]
 		then
 			_domopi_column_by_name $DOMOPI_SCHEMA_NAME $key >/dev/null
-			cut_fields="${cut_fields}$DOMOPI_CONF_FILE_COL_NUMBER,"
+			cut_fields="${cut_fields}$((DOMOPI_CONF_FILE_COL_NUMBER+1)),"
 			columns_to_show[$column_reduced]=$key
 			column_reduced=$((column_reduced+1))
 		fi
-	done <$_TMP
+	done
 
 	# rtrim ,
 	cut_fields=${cut_fields%"${cut_fields##*[!,]}"}
@@ -482,10 +473,10 @@ function _domopi_select_row()
 		posizioni[$pos]=$col
 	done
 
+	local _TMP=$(mktemp)
 	# 
 	# NOTA: cut non riordina i campi estratti
 	if [ -n "$cut_fields" ] ; then
-		grep -v '^#' "$file" | grep "$row_to_match" | cut -d: -f$cut_fields > $_TMP
 		local i=0
 		local pos row
 		local colname
@@ -503,6 +494,8 @@ function _domopi_select_row()
 		echo 
 		fi	> $SPOOL
 
+		# Impossibile costrutto pipe: deve generare variabili globali
+		egrep "$row_to_match" "$file" | cut -d: -f$cut_fields > $_TMP
 		while read row
 		do
 			IFS=: read -a row <<< "$row"
@@ -557,19 +550,15 @@ function _domopi_select_row()
 #	Si ricordi che i nomi di colonna sono minuscoli, quindi
 #	il suffisso maiuscolo è un tipo/caratteristica
 #
-#	$1 - file
+#	$1 - File di configurazione contenente la tabella
 #	$@ - lista coppie key:value per i valori
 #
 #
 function _domopi_insert_row()
 {
-	file=$1
-	# Read schema
-	_domopi_file_open "$file"
-	fd=$?
-	[ $fd -eq 255 ] && return 255	
-	_domopi_file_close $fd
+	[ -z "$DOMOPI_SCHEMA_NAME" ] && return 1
 
+	file=$1
 	shift
 
 	declare -A values
@@ -587,6 +576,7 @@ function _domopi_insert_row()
 		# Deve rispettare univocità delle colonne che finiscono con U
 		if [[ "$key" =~ U$ ]]
 		then
+			echo _domopi_column_by_name "$DOMOPI_SCHEMA_NAME" "$key" >/dev/null
 			_domopi_column_by_name "$DOMOPI_SCHEMA_NAME" "$key" >/dev/null
 			if grep -v '^#' "$file" | cut -d: -f$DOMOPI_CONF_FILE_COL_NUMBER | grep "$value" >/dev/null
 			then
@@ -625,13 +615,15 @@ function _domopi_insert_row()
 #
 # Domopi conf file CRUD
 #
-#	$1 - file
+#	$1 - File di configurazione contenente la tabella
 #	$@ - lista coppie key=value per chiavi ricerca (AND)
 #	$? - 0 = cancellazione avvenuta, 1 = cancellazione non avvenuta, 255 = errore nella gestione file
 #
 function _domopi_delete_row()
 {
 	local VERBOSE=false
+
+	[ -z "$DOMOPI_SCHEMA_NAME" ] && return 1
 
 	# Processa opzioni locali
 	local OPTIND=1 OPTARG opt
@@ -644,12 +636,6 @@ function _domopi_delete_row()
 	shift $((OPTIND-1))
 
 	file=$1
-	## Read schema
-	_domopi_file_open "$file"
-	fd=$?
-	[ $fd -eq 255 ] && return 255	
-	_domopi_file_close $fd
-
 	shift
 	declare -A where
 
@@ -668,9 +654,8 @@ function _domopi_delete_row()
 	[ ${#where[@]} -eq 0 ] && return 1
 
 	local row_to_match=""
-	local _TMP=$(mktemp)
-	eval echo \${DOMOPI_SCHEMA_$DOMOPI_SCHEMA_NAME[@]} >$_TMP
-	while read -d ' ' key
+	
+	for key in  $( eval echo \${DOMOPI_SCHEMA_$DOMOPI_SCHEMA_NAME[@]} )
 	do
 		if [ -n "${where[$key]}" ]
 		then
@@ -678,7 +663,9 @@ function _domopi_delete_row()
 		else
 			row_to_match="${row_to_match}.*:"
 		fi
-	done <$_TMP
+	done
+	# Trim : right
+	row_to_match=${row_to_match%"${row_to_match##*[!:]}"}
 
 
 	local _TABLE=$(mktemp)
@@ -702,7 +689,7 @@ function _domopi_delete_row()
 	fi
 	$VERBOSE && echo "$rows_deleted row(s) deleted."
 
-	rm -f $_TMP $_TABLE
+	rm -f $_TABLE
 
 	[[ $rows_deleted -gt 0 ]] && return 0
 	return 1
@@ -713,13 +700,15 @@ function _domopi_delete_row()
 #
 # Domopi conf file CRUD
 #
-#	$1 - file di configurazione
+#	$1 - File di configurazione contenente la tabella
 #	$@ lista coppie key:value per i valori da impostare,  lista coppie key=value per chiavi ricerca (AND)
 #	$? - 0 = aggiornamento avvenuto, 1 = aggiornamento non avvenuto, 255 = errore nella gestione file
 #
 function _domopi_update_row()
 {
 	local VERBOSE=false
+
+	[ -z "$DOMOPI_SCHEMA_NAME" ] && return 1
 
 	# Processa opzioni locali
 	local OPTIND=1 OPTARG opt
@@ -732,12 +721,6 @@ function _domopi_update_row()
 	shift $((OPTIND-1))
 
 	file=$1
-	## Read schema
-	_domopi_file_open "$file"
-	fd=$?
-	[ $fd -eq 255 ] && return 255	
-	_domopi_file_close $fd
-
 	shift
 	declare -A where
 	declare -A columns
@@ -765,9 +748,8 @@ function _domopi_update_row()
 
 	local row_to_match=""
 	local row_as_is=""
-	local _TMP=$(mktemp)
-	eval echo \${DOMOPI_SCHEMA_$DOMOPI_SCHEMA_NAME[@]} >$_TMP
-	while read -d ' ' key
+
+	for key in	$( eval echo \${DOMOPI_SCHEMA_$DOMOPI_SCHEMA_NAME[@]} )
 	do
 		if [ -n "${where[$key]}" ]
 		then
@@ -775,7 +757,9 @@ function _domopi_update_row()
 		else
 			row_to_match="${row_to_match}.*:"
 		fi
-	done <$_TMP
+	done
+	# Trim : right
+	row_to_match=${row_to_match%"${row_to_match##*[!:]}"}
 
 	local _TABLE=$(mktemp)
 	local ARGS=""
@@ -788,9 +772,11 @@ function _domopi_update_row()
 		row_number=${row%%:*}
 		row_as_is=${row#*:}
 
+		IFS=: read -r -a row_data <<< "$row_as_is"
+
 		# Calcola offset compreso header
 		local row_to_be=""
-		while read -d ' ' key
+		for key in	$( eval echo \${DOMOPI_SCHEMA_$DOMOPI_SCHEMA_NAME[@]} )
 		do
 			if [ -n "${columns[$key]}" ]
 			then
@@ -798,11 +784,10 @@ function _domopi_update_row()
 			else
 				# Deve recuperare il vero dato
 				_domopi_column_by_name "$DOMOPI_SCHEMA_NAME" "$key" >/dev/null
-				dato=$( echo $row_as_is | cut -d: -f$DOMOPI_CONF_FILE_COL_NUMBER )
-
+				dato=${row_data[$DOMOPI_CONF_FILE_COL_NUMBER]}
 				row_to_be="${row_to_be}$dato:"
 			fi
-		done < $_TMP
+		done
 
 		# Accumula riga di configurazione sed
 		if [ $row_number -gt 2 ]; then
@@ -811,13 +796,14 @@ function _domopi_update_row()
 		fi
 	done < $_TABLE
 
+
 	# Solo se non match con intestazione
 	if [[ $rows_updated -gt 0 ]]; then
 		eval sed -i.bak $ARGS "$file"
 	fi
 	$VERBOSE && echo "$rows_updated row(s) updated."
 
-	rm -f $_TMP $_TABLE
+	rm -f $_TABLE
 
 	[[ $row_updated -gt 0 ]] && return 0
 	return 1
@@ -900,11 +886,13 @@ function domopi_timer_start()
 #
 function domopi_time_elapsed()
 {
+	PROMPT=
+	[[ "$1" = '-q' ]] && PROMPT=-q && shift
 	DOMOPI_OP_END_TIME=$( date '+%s%N' )
 	eval START=\$DOMOPI_OP_START_TIME_$1
 	[ -z "$DOMOPI_OP_START_TIME_$1" ] && return 1
 	time=$( echo "( $DOMOPI_OP_END_TIME - $START ) / 1000000" | bc )
-	domopi_notice "Operazione '${1:-anonymous}' conclusa in $time msec"
+	domopi_notice $PROMPT "Operazione '${1:-anonymous}' conclusa in $time msec"
 }
 
 
@@ -914,10 +902,14 @@ function domopi_time_elapsed()
 #
 function domopi_notice()
 {
+	PROMPT=true
+	[[ "$1" = '-q' ]] && PROMPT=false && shift
 	echo
 	echo $@
-	echo 'Premi invio per proseguire'
-	read
+	if $PROMPT; then
+		echo 'Premi invio per proseguire'
+		read
+	fi
 }
 
 
@@ -1019,6 +1011,10 @@ function domopi_create()
 	local PATCH
 	local ret
 	# Il file di configurazione deve esistere inizializzato
+	# Read schema
+	_domopi_file_open "$DOMOPI_GLOBAL_CONF"
+	fd=$?	# Non usato direttamente
+	[ $fd -eq 255 ] && return 1
 
 	# Processa opzioni locali
 	local OPTIND=1 OPTARG opt
@@ -1034,11 +1030,11 @@ function domopi_create()
 
 	case "$1" in
 	sensor)
-		_domopi_insert_row $DOMOPI_GLOBAL_CONF sensorID:'*' "descriptionU:$2" "$PATCH"
+		_domopi_insert_row "$DOMOPI_GLOBAL_CONF" sensorID:'*' "descriptionU:$2" "$PATCH"
 		ret=$?
 		;;
 	group)
-		_domopi_insert_row $DOMOPI_GLOBAL_CONF groupID:'*' "descriptionU:$2"
+		_domopi_insert_row "$DOMOPI_GLOBAL_CONF" groupID:'*' "descriptionU:$2"
 		ret=$?
 		;;
 	*)
@@ -1046,6 +1042,9 @@ function domopi_create()
 		return 1
 		;;
 	esac
+
+	[ $fd -eq 255 ] && return 255	
+	_domopi_file_close $fd
 
 	return $ret
 }
@@ -1070,6 +1069,10 @@ function domopi_destroy()
 	local VERBOSE=false
 	local NUMERIC=false
 	# Il file di configurazione deve esistere inizializzato
+	# Read schema
+	_domopi_file_open "$DOMOPI_GLOBAL_CONF"
+	fd=$?	# Non usato direttamente
+	[ $fd -eq 255 ] && return 1
 
 	# Processa opzioni locali
 	local OPTIND=1 OPTARG opt
@@ -1199,6 +1202,10 @@ function domopi_set_state()
 	local GROUP=false
 	local ret=1
 	# Il file di configurazione deve esistere inizializzato
+	# Read schema
+	_domopi_file_open "$DOMOPI_GLOBAL_CONF"
+	fd=$?	# Non usato direttamente
+	[ $fd -eq 255 ] && return 1
 
 	# Processa opzioni locali
 	local OPTIND=1 OPTARG opt
@@ -1235,6 +1242,8 @@ function domopi_set_state()
 		fi
 	fi
 
+	#[ $fd -eq 255 ] && return 255	
+	_domopi_file_close $fd
 	return $ret
 }
 
@@ -1266,6 +1275,10 @@ function domopi_get_state()
 	local NUMERIC=false
 	local GROUP=false
 	# Il file di configurazione deve esistere inizializzato
+	# Read schema
+	_domopi_file_open "$DOMOPI_GLOBAL_CONF"
+	fd=$?	# Non usato direttamente
+	[ $fd -eq 255 ] && return 1
 
 	# Processa opzioni locali
 	local OPTIND=1 OPTARG opt
@@ -1292,6 +1305,8 @@ function domopi_get_state()
 		fi
 	fi
 
+	#[ $fd -eq 255 ] && return 255	
+	_domopi_file_close $fd
 	return 0
 }
 
@@ -1308,17 +1323,24 @@ function domopi_get_state()
 public domopi_list
 function domopi_list()
 {
+	## Read schema
+	_domopi_file_open "$DOMOPI_GLOBAL_CONF"
+	fd=$?	# Non usato direttamente
+
 	case "$1" in
 	sensor)
 		_domopi_select_row "$DOMOPI_GLOBAL_CONF" sensorID descriptionU currentstate patchin patchout groupID=x
 		;;
 	group)
-		_domopi_select_row "$DOMOPI_GLOBAL_CONF" groupID descriptionU currentstate sensorID=x
+		_domopi_select_row groupID descriptionU currentstate sensorID=x
 		;;
 	*)
 		echo NON IMPLEMENTATO
 		;;
 	esac
+
+	#[ $fd -eq 255 ] && return 255	
+	_domopi_file_close $fd
 }
 
 
