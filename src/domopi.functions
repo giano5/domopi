@@ -428,7 +428,7 @@ function _domopi_select_row()
 			where[$key]=$value
 		else
 			unset DOMOPI_$a
-			columns[$a]=$position
+			columns["$a"]=$position
 			position=$((position+1))
 		fi
 	done
@@ -566,6 +566,7 @@ function _domopi_insert_row()
 
 	for a in "$@"
 	do
+		[ -z "$a" ] && continue
 		key="${a%%:*}"
 		value="${a##*:}"
 		if [[ "$key" =~ ID$ ]] && [ "$value" = '*' ]
@@ -641,12 +642,13 @@ function _domopi_delete_row()
 
 	for a in "$@"
 	do
+		[ -z "$a" ] && continue
 		# ricerca = per criterio ricerca
 		if [[ "$a" =~ .*=.* ]]; then
 			key="${a%%=*}"
 			value="${a##*=}"
 			# Il criterio deve essere espresso (sicurezza)
-			[ -n "$value" ] && where[$key]=$value
+			[ -n "$value" ] && where["$key"]=$value
 		fi
 	done
 
@@ -727,6 +729,8 @@ function _domopi_update_row()
 
 	for a in "$@"
 	do
+		[ -z "$a" ] && continue
+
 		# ricerca = per criterio ricerca
 		if [[ "$a" =~ .*=.* ]]; then
 			key="${a%%=*}"
@@ -997,10 +1001,10 @@ function domopi_init()
 #
 #	-m moduleid TODO
 #	-g groupid TODO
-#	-w wiredPI TODO
 #	-s default state TODO
-#	-i <patchIn>
-#	-o <patchOut>
+#	-p <patchNumber>
+#	-t <type>
+#	-w <wiredPI>
 #
 #	@author Andrea Tassotti
 #
@@ -1018,19 +1022,47 @@ function domopi_create()
 
 	# Processa opzioni locali
 	local OPTIND=1 OPTARG opt
-	while getopts ":vi:o:" opt; do
+	while getopts ":p:t:vw:" opt; do
 		case $opt in
+		p)	PATCHNUMBER=$OPTARG ;;
+		t)	TYPE=$OPTARG ;;
 		v)	VERBOSE=true ;;
-		i)	PATCH="patchin:$OPTARG" ;;
-		o)	PATCH="patchout:$OPTARG" ;;
+		w)	WIREDPI=$OPTARG ;;
 		:)	echo argument required ; return ;;
 		esac
 	done
 	shift $((OPTIND-1))
 
+	PATCH=""
+	case "$TYPE" in
+	"LIGHT")
+		[ -n "$PATCHNUMBER" ] && PATCH="patchout:$PATCHNUMBER" 
+		;;
+	"NOLIGHT")
+		[ -n "$PATCHNUMBER" ] && PATCH="patchout:$PATCHNUMBER" 
+		;;
+	"SWITCH")
+		[ -n "$PATCHNUMBER" ] && PATCH="patchin:$PATCHNUMBER" 
+		;;
+	"ALARM")
+		[ -n "$PATCHNUMBER" ] && PATCH="patchout:$PATCHNUMBER" 
+		[ -n "$PATCHNUMBER" ] && PATCH="patchin:$PATCHNUMBER" 
+		;;
+	"OTHER")
+		;;
+	"PULSE")
+		[ -n "$PATCHNUMBER" ] && PATCH="patchin:$PATCHNUMBER" 
+		;;
+	*)
+		echo FATAL: not implemented >&2
+		return 1
+		;;
+	esac
+		
+
 	case "$1" in
 	sensor)
-		_domopi_insert_row "$DOMOPI_GLOBAL_CONF" sensorID:'*' "descriptionU:$2" "$PATCH"
+		_domopi_insert_row "$DOMOPI_GLOBAL_CONF" sensorID:'*' "descriptionU:$2" wiredpi:"$WIREDPI" "$PATCH" 
 		ret=$?
 		;;
 	group)
@@ -1329,7 +1361,7 @@ function domopi_list()
 
 	case "$1" in
 	sensor)
-		_domopi_select_row "$DOMOPI_GLOBAL_CONF" sensorID descriptionU currentstate patchin patchout groupID=x
+		_domopi_select_row "$DOMOPI_GLOBAL_CONF" sensorID descriptionU currentstate wiredpi patchin patchout groupID=x
 		;;
 	group)
 		_domopi_select_row groupID descriptionU currentstate sensorID=x

@@ -39,6 +39,37 @@ function init()
 
 
 #
+# Selezioni
+#
+function select_tipo()
+{
+	TIPO="false"
+	while [ "$TIPO" = "false" ]
+	do
+		echo "Seleziona un tipo tra:"
+		echo "  1 - LIGHT"
+		echo "  2 - NOLIGHT"
+		echo "  3 - SWITCH"
+		echo "  4 - ALARM"
+		echo "  5 - OTHER"
+		echo "  6 - PULSE"
+		echo -n "Scegli: "
+		read
+		case "$REPLY" in
+		1) TIPO="LIGHT"	;;
+		2) TIPO="NOLIGHT"	;;
+		3) TIPO="SWITCH"	;;
+		4) TIPO="ALARM"	;;
+		5) TIPO="OTHER"	;;
+		6) TIPO="PULSE"	;;
+		*)
+			;;
+		esac
+	done
+}
+
+
+#
 # Creazione sensori
 #
 # Opeazione effettuata con:
@@ -59,13 +90,16 @@ function create()
 		read DESC
 		[[ "$DESC" = "end" ]] && break;
 
-		echo -n "IN/OUT (digitare 'i' oppure 'o')? "
-		read VERSO
-		echo -n "Patch number: "
+		select_tipo
+
+		echo -n "Patch number (lascare vuoto se non usato): "
 		read PATCH
 	
+		echo -n "WiredPI number (lascare vuoto se non usato): "
+		read WIRED
+
 		domopi_timer_start create
-		domopi_create -$VERSO "$PATCH" sensor "$DESC"
+		domopi_create -t $TIPO -p "$PATCH" -w $WIRED sensor "$DESC"
 		domopi_time_elapsed create
 	done
 }
@@ -78,22 +112,23 @@ function create_mult()
 	echo -n "Nome del sensore (default=SENSOR): "
 	read DESC
 
-	echo -n "Patch number: "
+	select_tipo
+
+	echo -n "Patch number (lascare vuoto se non usato): "
 	read PATCH
-	echo -n "IN/OUT (digitare 'i' oppure 'o' )? "
-	read VERSO
 
 	echo
 	echo -n "Indicare quantità (default=10): "
 	read COUNT
 	echo -n "Genero sensori "
+	domopi_timer_start create_mult
 	for((i=1;i<=${COUNT:-10};i++))
 	do
-		domopi_create -${VERSO:-o} "$PATCH" sensor "${DESC:-SENSOR}_$i" 2>/dev/null
+		domopi_create -t $TIPO -p "$PATCH" sensor "${DESC:-SENSOR}_$i" #>/dev/null 2>&1
 		[ $? -eq 0 ] && echo -n . || echo -n '!'
 	done
 	echo
-	domopi_notice 'Opeazione conclusa con successo'
+	domopi_time_elapsed create_mult
 }
 
 
@@ -138,8 +173,8 @@ function state_simulation()
 		read STATE
 		domopi_timer_start set_state
 		[ -n "$STATE" ] && domopi_set_state -n $ID $STATE
-		domopi_time_elapsed set_state
 		[ $? -ne 0 ] && echo Nessuna transizione di stato
+		domopi_time_elapsed set_state
 		echo
 		echo Condizione generale del sistema
 		list
@@ -179,6 +214,7 @@ function master_page()
 	echo '[2] - Creazione sensore'
 	echo '[3] - Lista sensori'
 	echo '[4] - Simulazione stati'
+	echo '[5] - Rimozione sensore'
 	echo '[q] - Quit'
 }
 
@@ -201,6 +237,20 @@ function master_page_3()
 function master_page_4()
 {
 	state_simulation 
+}
+
+function master_page_5()
+{
+
+	DONE="false"
+	while [ $DONE != "true" ]
+	do
+		echo -n "ID del sensore da rimuovere (scivere 'end' per terminare): "
+		read ID
+		[ -z "$ID" ] && continue
+		[[ "$ID" = "end" ]] && break;
+		domopi_destroy -n sensor $ID
+	done
 }
 
 function init_page()
