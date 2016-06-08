@@ -101,7 +101,7 @@ function create()
 		read WIRED
 
 		domopi_timer_start create
-		domopi_create -t $TIPO -p "$PATCH" -w $WIRED sensor "$DESC"
+		domopi_create -t "$TIPO" -p "$PATCH" -w "$WIRED" sensor "$DESC"
 		domopi_time_elapsed create
 	done
 }

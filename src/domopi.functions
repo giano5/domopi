@@ -445,7 +445,7 @@ function _domopi_select_row()
 		fi
 	done
 	# Trim : right
-	row_to_match=${row_to_match%"${row_to_match##*[!:]}"}
+#	row_to_match=${row_to_match%"${row_to_match##*[!:]}"}
 
 	local cut_fields=""
 	local column_reduced=0
@@ -577,23 +577,21 @@ function _domopi_insert_row()
 		# Deve rispettare univocità delle colonne che finiscono con U
 		if [[ "$key" =~ U$ ]]
 		then
-			echo _domopi_column_by_name "$DOMOPI_SCHEMA_NAME" "$key" >/dev/null
 			_domopi_column_by_name "$DOMOPI_SCHEMA_NAME" "$key" >/dev/null
-			if grep -v '^#' "$file" | cut -d: -f$DOMOPI_CONF_FILE_COL_NUMBER | grep "$value" >/dev/null
+			if grep -v '^#' "$file" | cut -d: -f$((DOMOPI_CONF_FILE_COL_NUMBER + 1 ))| grep "$value" >/dev/null
 			then
 				echo WARNING: duplicate value $value in column $key >&2
 				return 255
 			fi
 		fi
 
-		values[$key]=$value
+		values[$key]="$value"
 	done
 
 	
 	local row=""
 	local _TMP=$(mktemp)
-	eval echo \${DOMOPI_SCHEMA_$DOMOPI_SCHEMA_NAME[@]} >$_TMP
-	while read -d ' ' key
+	for key in  $( eval echo \${DOMOPI_SCHEMA_$DOMOPI_SCHEMA_NAME[@]} )
 	do
 		if [ -n "${values[$key]}" ]
 		then
@@ -603,7 +601,7 @@ function _domopi_insert_row()
 			[[ "$key" =~ ID$ ]] && value=x
 		fi
 		row="$row$value:"
-	done <$_TMP
+	done
 
 	echo "$row" >>"$file"
 
@@ -667,7 +665,7 @@ function _domopi_delete_row()
 		fi
 	done
 	# Trim : right
-	row_to_match=${row_to_match%"${row_to_match##*[!:]}"}
+#	row_to_match=${row_to_match%"${row_to_match##*[!:]}"}
 
 
 	local _TABLE=$(mktemp)
@@ -1054,7 +1052,7 @@ function domopi_create()
 		[ -n "$PATCHNUMBER" ] && PATCH="patchin:$PATCHNUMBER" 
 		;;
 	*)
-		echo FATAL: not implemented >&2
+		echo FATAL: type not implemented >&2
 		return 1
 		;;
 	esac
@@ -1070,7 +1068,7 @@ function domopi_create()
 		ret=$?
 		;;
 	*)
-		echo FATAL: not implemented >&2
+		echo FATAL: $1 not implemented >&2
 		return 1
 		;;
 	esac
@@ -1333,6 +1331,46 @@ function domopi_list()
 	_domopi_file_close $fd
 }
 
+
+##
+#	Ricerca i wirepi utilizzati in configurazione
+#	
+#	-d<id>	ricerca per deviceID
+#	-s<id>	ricerca per sensorID
+#	-t<in/out>	ricerca per tipo
+#	-v	Verbose mode
+#
+#
+public domopi_get_wirepi
+function domopi_get_wirepi()
+{
+	local VERBOSE=false
+	local COLUMNS_TO_MATCH=""
+	local ret
+	# Il file di configurazione deve esistere inizializzato
+	# Read schema
+	_domopi_file_open "$DOMOPI_GLOBAL_CONF"
+	fd=$?	# Non usato direttamente
+	[ $fd -eq 255 ] && return 1
+
+	# Processa opzioni locali
+	local OPTIND=1 OPTARG opt
+	while getopts ":dst:vw:" opt; do
+		case $opt in
+		d)	COLUMN_TO_MATCH=deviceID ;;
+		s)	COLUMN_TO_MATCH=sensorID ;;
+		t)	J=$OPTIND ;;
+		v)	VERBOSE=true ;;
+		:)	echo argument required ; return ;;
+		esac
+	done
+	shift $((OPTIND-1))
+
+	_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" wiredpi $COLUMNS_TO_MATCH
+
+	#[ $fd -eq 255 ] && return 255	
+	_domopi_file_close $fd
+}
 
 
 #-----------------------------------------------
