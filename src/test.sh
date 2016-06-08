@@ -7,6 +7,8 @@
 COLOR_BLUE='\033[34m'
 COLOR_RED='\033[1;31m'
 COLOR_RESET='\033[0m'
+IDOWIRED="ID"
+IDOWIRED_NEXT="WIREDPI"
 
 
 function init()
@@ -162,18 +164,27 @@ function state_simulation()
 	while [ $DONE != "true" ]
 	do
 		echo 'Lettura stato'
-		echo -n "ID del sensore (scivere 'end' per terminare): "
+		echo -n "$IDOWIRED del sensore (scivere 'end' per terminare): "
 		read ID
 		[ -z "$ID" ] && continue
 		[[ "$ID" = "end" ]] && break;
 		echo -ne "Stato corrente del sensore $ID: $COLOR_BLUE"
-		domopi_get_state -q -n $ID
+		if [ $IDOWIRED = "ID" ]; then
+			domopi_get_state -q -n $ID
+		else
+			domopi_get_state -q -w $ID
+		fi
 		echo -e $COLOR_RESET
 		echo -n "Nuovo stato del sensore $ID (lasciare vuoto per non cambiare): "
 		read STATE
 		domopi_timer_start set_state
-		[ -n "$STATE" ] && domopi_set_state -n $ID $STATE
-		[ $? -ne 0 ] && echo Nessuna transizione di stato
+		if [ $IDOWIRED = "ID" ]; then
+			[ -n "$STATE" ] && domopi_set_state -n $ID $STATE
+			[ $? -ne 0 ] && echo Nessuna transizione di stato
+		else
+			[ -n "$STATE" ] && domopi_set_state -w $ID $STATE
+			[ $? -ne 0 ] && echo Nessuna transizione di stato
+		fi
 		domopi_time_elapsed set_state
 		echo
 		echo Condizione generale del sistema
@@ -210,7 +221,7 @@ function header()
 function master_page()
 {
 	header
-	echo '[1] - Inizializzazione'
+	echo '[1] - Inizializzazione e configurazioni'
 	echo '[2] - Creazione sensore'
 	echo '[3] - Lista sensori'
 	echo '[4] - Simulazione stati'
@@ -258,6 +269,7 @@ function init_page()
 	header
 	echo '[1] - Rimuovi identità esistente'
 	echo '[2] - Lista sensori'
+	echo "[3] - Cambia riferimento in $IDOWIRED_NEXT (attuale: $IDOWIRED)"
 	echo '[q] - Indietro'
 }
 
@@ -270,6 +282,17 @@ function init_page_1()
 function init_page_2()
 {
 	list
+}
+
+function init_page_3()
+{
+	if [ $IDOWIRED = "ID" ]; then
+		IDOWIRED="WIREDPI"
+		IDOWIRED_NEXT="ID"
+	else
+		IDOWIRED="ID"
+		IDOWIRED_NEXT="WIREDPI"
+	fi
 }
 
 function create_page()
