@@ -382,7 +382,7 @@ function _domopi_desc()
 #	Restituisce in STDOUT tabella nome=valore
 #	e nel contempo imposta variabili DOMOPI_nome
 #
-#	NOTA: Ordine di output delle colonne corrisponde alla posizione nel file, non nell'ordine fornito in input funzione [TODO ?]
+#	TODO: Costrutto != null
 #
 #	Esempio:
 #
@@ -441,6 +441,7 @@ function _domopi_select_row()
 		then
 			row_to_match="$row_to_match${where[$key]}:"
 		else
+# TODO: usare .+ per != null
 			row_to_match="${row_to_match}.*:"
 		fi
 	done
@@ -1341,8 +1342,8 @@ function domopi_list()
 #	-v	Verbose mode
 #
 #
-public domopi_get_wirepi
-function domopi_get_wirepi()
+public domopi_get_wiredpi
+function domopi_get_wiredpi()
 {
 	local VERBOSE=false
 	local COLUMNS_TO_MATCH=""
@@ -1355,11 +1356,12 @@ function domopi_get_wirepi()
 
 	# Processa opzioni locali
 	local OPTIND=1 OPTARG opt
-	while getopts ":dst:vw:" opt; do
+	while getopts ":d:s:t:vw:" opt; do
 		case $opt in
-		d)	COLUMN_TO_MATCH=deviceID ;;
-		s)	COLUMN_TO_MATCH=sensorID ;;
-		t)	J=$OPTIND ;;
+		d)	COLUMNS_TO_MATCH="${COLUMNS_TO_MATCH}deviceID=$OPTARG " ;;
+		s)	COLUMNS_TO_MATCH="${COLUMNS_TO_MATCH}sensorID=$OPTARG " ;;
+		t)	# TODO: Per implementare _domopi_select_row deve avere costrutto != null
+			;;
 		v)	VERBOSE=true ;;
 		:)	echo argument required ; return ;;
 		esac

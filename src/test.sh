@@ -226,6 +226,7 @@ function master_page()
 	echo '[3] - Lista sensori'
 	echo '[4] - Simulazione stati'
 	echo '[5] - Rimozione sensore'
+	echo '[6] - Lista wiredpi configurati'
 	echo '[q] - Quit'
 }
 
@@ -263,6 +264,15 @@ function master_page_5()
 		domopi_destroy -n sensor $ID
 	done
 }
+
+function master_page_6()
+{
+# TODO: Scegliere opzioni di selezioe per device (-d) o persensore (-s) o per tipo (-t)
+	echo "Tutti i wired configurati:"
+	domopi_get_wiredpi
+	domopi_notice
+}
+
 
 function init_page()
 {
