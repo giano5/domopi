@@ -842,7 +842,7 @@ function _domopi_update_row()
 #
 #
 public domopi_help
-function domopi_help
+function domopi_help()
 {
 	echo "API Public functions:"
 	echo
@@ -855,11 +855,14 @@ function domopi_help
 }
 
 ##
+#	Il sommario
+#
+#	Descrizione lunga
 #
 #	@see bashdoc
 #
 public domopi_man
-function domopi_man
+function domopi_man()
 {
 /usr/bin/awk '
 /^##/				{ incomment=1; insummary=1; text=""; getline; }
@@ -869,8 +872,8 @@ function domopi_man
 /^#[[:blank:]]*[\@]note/ { if (incomment) { insummary=0; n=""; for(i=3;i<=NF;i++) n=n$i" "; note[length(note)]=n; next; } }
 /^#[[:blank:]]*[\@]see/ { if (incomment) { insummary=0; s=""; for(i=3;i<=NF;i++) s=s$i" "; see[length(see)]=s; next; } }
 /^#.*[\$][0-9\?]+/	{ if (incomment) { par=""; for(i=2;i<=NF;i++) par=par" "$i; h[$2]=par; next; } }
-/^function /		{ if ( incomment && $2 == "'"$1()"'" ) { print "Funzione   : "$2; print "Sommario   : "summary; print "Descrizione: "text; print "Autore     : "author; for(v in note) print "Nota       : "note[v]; for(v in see) print "Vedi       : "see[v]; print "Parametri  :"; for(v in h) print h[v]; print "Opzioni    :"; for(v in o) print o[v]    ; print ""; } incomment=0; delete h; delete o; delete note; delete see; getline; }
-					{ if ( incomment ) { if ( insummary ) { summary=""; for(i=2;i<=NF;i++) summary=summary$i" "; } else { for(i=2;i<=NF;i++) text=text$i" "; text=text"\n\t"; } } } ' $DOMOPI_API_PATH
+/^function /		{ if ( incomment && $2 == "'"$1()"'" ) { print "Funzione   : "$2; print "Sommario   : "summary; print "Descrizione: "text; print "Autore     : "author; for(v in note) print "Nota       : "note[v]; for(v in see) print "Vedi       : "see[v]; print "Parametri  :"; for(v in h) print h[v]; print "Opzioni    :"; for(v in o) print o[v]    ; print ""; } incomment=0; insummary=0; delete h; delete o; delete note; delete see; text=""; next; }
+					{ if ( incomment ) { if ( insummary ) { text=""; summary=""; for(i=2;i<=NF;i++) summary=summary$i" "; } else { if (NF>2){ for(i=2;i<=NF;i++) text=text$i" "; text=text"\n\t"; } } } } ' $DOMOPI_API_PATH
 }
 
 
@@ -1000,8 +1003,7 @@ function domopi_init()
 #
 #	Ancora incompleto.
 #	Scrive nel file determinato dalla variabile
-#	ambientale DOMOPI_GLOBAL_CONF creato con
-#	domopi_init
+#	ambientale DOMOPI_GLOBAL_CONF creato con domopi_init
 #
 #	$1 - 'sensor', 'module' or 'group'
 #	$2 - name
