@@ -18,6 +18,7 @@ domopi_ident
 domopi_create (parziale)
 domopi_get_state
 domopi_set_state
+domopi_get_wirepi
 
 
 PER UN ESEMPIO VEDERE:
@@ -41,7 +42,7 @@ Le prime dire righe nella strutturadel file sono commenti gestiti dalla libreria
 
 Attualmente la libreria conosce solo il seguente schema:
 
-DOMOPI_FILE_SCHEMA['global']='# groupID:moduleID:sensorID:wiredPI:type:mode:maxExecutionTime:order:defaultState:currentState:descriptionU:alias:groups'
+DOMOPI_FILE_SCHEMA['global']='# groupID:deviceID:sensorID:patchin:patchout:wiredpi:type:mode:maxexecutiontime:order:defaultstate:currentstate:descriptionU:alias:groups'
 
 utilizzato nel file di configurazione global.cfg per la definizione della maggiorparte degli oggetti necessari al progetto.
 
