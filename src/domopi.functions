@@ -378,11 +378,13 @@ function _domopi_desc()
 #	Sintassi argomenti:
 #	lista di nomi colonne per la select
 #	lista coppie key=value per chiavi ricerca (AND)
+#	lista coppie key='null' o key='!null' per IS NULL o IS NOT NULL
+#
+#	Nel caso di colonne ID$ 'x' significa 'non significativo'
 #
 #	Restituisce in STDOUT tabella nome=valore
 #	e nel contempo imposta variabili DOMOPI_nome
 #
-#	TODO: Costrutto != null
 #
 #	Esempio:
 #
@@ -425,7 +427,7 @@ function _domopi_select_row()
 		if [[ "$a" =~ .*=.* ]]; then
 			key="${a%%=*}"
 			value="${a##*=}"
-			where[$key]=$value
+			where[$key]="$value"
 		else
 			unset DOMOPI_$a
 			columns["$a"]=$position
@@ -439,9 +441,14 @@ function _domopi_select_row()
 	do
 		if [ -n "${where[$key]}" ]
 		then
-			row_to_match="$row_to_match${where[$key]}:"
+			if [[ "${where[$key]}" = "!null" ]]; then
+				row_to_match="${row_to_match}.+:"
+			elif [[ "${where[$key]}" = "null" ]]; then
+				row_to_match="${row_to_match}:"
+			else
+				row_to_match="$row_to_match${where[$key]}:"
+			fi
 		else
-# TODO: usare .+ per != null
 			row_to_match="${row_to_match}.*:"
 		fi
 	done
@@ -598,6 +605,7 @@ function _domopi_insert_row()
 		then
 			value="${values[$key]}"
 		else
+			# NULL indicator per ID
 			value=
 			[[ "$key" =~ ID$ ]] && value=x
 		fi
@@ -862,7 +870,7 @@ function domopi_man
 /^#[[:blank:]]*[\@]see/ { if (incomment) { insummary=0; s=""; for(i=3;i<=NF;i++) s=s$i" "; see[length(see)]=s; next; } }
 /^#.*[\$][0-9\?]+/	{ if (incomment) { par=""; for(i=2;i<=NF;i++) par=par" "$i; h[$2]=par; next; } }
 /^function /		{ if ( incomment && $2 == "'"$1()"'" ) { print "Funzione   : "$2; print "Sommario   : "summary; print "Descrizione: "text; print "Autore     : "author; for(v in note) print "Nota       : "note[v]; for(v in see) print "Vedi       : "see[v]; print "Parametri  :"; for(v in h) print h[v]; print "Opzioni    :"; for(v in o) print o[v]    ; print ""; } incomment=0; delete h; delete o; delete note; delete see; getline; }
-					{ if ( incomment ) { if ( insummary ) { summary=""; for(i=2;i<=NF;i++) summary=summary$i" "; } else { for(i=2;i<=NF;i++) text=text$i" "; } } } ' $DOMOPI_API_PATH
+					{ if ( incomment ) { if ( insummary ) { summary=""; for(i=2;i<=NF;i++) summary=summary$i" "; } else { for(i=2;i<=NF;i++) text=text$i" "; text=text"\n\t"; } } } ' $DOMOPI_API_PATH
 }
 
 
@@ -1318,10 +1326,10 @@ function domopi_list()
 
 	case "$1" in
 	sensor)
-		_domopi_select_row "$DOMOPI_GLOBAL_CONF" sensorID descriptionU currentstate wiredpi patchin patchout groupID=x
+		_domopi_select_row "$DOMOPI_GLOBAL_CONF" sensorID descriptionU currentstate wiredpi patchin patchout
 		;;
 	group)
-		_domopi_select_row groupID descriptionU currentstate sensorID=x
+		_domopi_select_row groupID descriptionU currentstate 
 		;;
 	*)
 		echo NON IMPLEMENTATO
@@ -1335,6 +1343,8 @@ function domopi_list()
 
 ##
 #	Ricerca i wirepi utilizzati in configurazione
+#
+#	Le opzioni di ricerca sono cumulabili in AND
 #	
 #	-d<id>	ricerca per deviceID
 #	-s<id>	ricerca per sensorID
@@ -1360,7 +1370,10 @@ function domopi_get_wiredpi()
 		case $opt in
 		d)	COLUMNS_TO_MATCH="${COLUMNS_TO_MATCH}deviceID=$OPTARG " ;;
 		s)	COLUMNS_TO_MATCH="${COLUMNS_TO_MATCH}sensorID=$OPTARG " ;;
-		t)	# TODO: Per implementare _domopi_select_row deve avere costrutto != null
+		t)	case "$OPTARG" in	
+			in)	 COLUMNS_TO_MATCH="${COLUMNS_TO_MATCH}patchin='!null' " ;;
+			out) COLUMNS_TO_MATCH="${COLUMNS_TO_MATCH}patchout='!null' " ;;
+			esac
 			;;
 		v)	VERBOSE=true ;;
 		:)	echo argument required ; return ;;
@@ -1368,7 +1381,12 @@ function domopi_get_wiredpi()
 	done
 	shift $((OPTIND-1))
 
-	_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" wiredpi $COLUMNS_TO_MATCH
+	
+	if $VERBOSE ; then
+		eval _domopi_select_row \"$DOMOPI_GLOBAL_CONF\" wiredpi descriptionU $COLUMNS_TO_MATCH
+	else
+		eval _domopi_select_row -q \"$DOMOPI_GLOBAL_CONF\" wiredpi $COLUMNS_TO_MATCH
+	fi
 
 	#[ $fd -eq 255 ] && return 255	
 	_domopi_file_close $fd
