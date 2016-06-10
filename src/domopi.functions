@@ -37,12 +37,20 @@ declare -A DOMOPI_FILE_SCHEMA
 # Configuration files
 DOMOPI_IDENT_FILE=$DOMOPI_CONF_PATH/ident.cfg
 DOMOPI_GLOBAL_CONF=$DOMOPI_CONF_PATH/global.cfg
+DOMOPI_MODULES_CONF=$DOMOPI_CONF_PATH/modules.cfg
 DOMOPI_FILE_FINGERPRINT='# Automatically generatedfile: do not modify!'
 
-# Schema is for generate initial configuration
+# Schemas is for generate initial configuration
+
+# Logical configuration
 DOMOPI_FILE_SCHEMA['global']='# groupID:deviceID:sensorID:patchin:patchout:wiredpi:type:mode:maxexecutiontime:order:defaultstate:currentstate:descriptionU:alias:groups'
 # NOTA: In caso di bash < 4.2 dichiarare a questo livello
 #declare -A DOMOPI_SCHEMA_COL_global
+
+# Physical configuration
+DOMOPI_FILE_SCHEMA['modules']='# deviceID:moduleID:descriptionU:wirepi:type:used'
+# NOTA: In caso di bash < 4.2 dichiarare a questo livello
+#declare -A DOMOPI_SCHEMA_COL_modules
 
 unset DOMOPI_FILE_DESCRIPTORS
 declare -a DOMOPI_FILE_DESCRIPTORS
@@ -977,6 +985,11 @@ function domopi_init()
 		return 1
 	fi
 
+	if [ ! -f "$DOMOPI_MODULES_CONF" ]; then
+		echo "ERROR: hardware configuration missing." >&2
+		return 2
+	fi
+
 	# Generate Identity file
 
 	# generate uuid
@@ -999,6 +1012,25 @@ function domopi_init()
 
 
 ##
+#
+#	Genera file di struttura hardware
+#
+public domopi_intall
+function domopi_install
+{
+	if [ ! -f "$DOMOPI_MODULES_CONF" ]; then
+		# Generate global configuration file (empty with schema)
+		echo "$DOMOPI_FILE_FINGERPRINT" '$modules$' >$DOMOPI_MODULES_CONF
+		echo "${DOMOPI_FILE_SCHEMA['modules']}" >>$DOMOPI_MODULES_CONF
+	else
+		echo "ERROR: hardware configuration exists." >&2
+		return 2
+	fi
+}
+
+
+
+##
 #	Creazione configurazione oggetti di base
 #
 #	Ancora incompleto.
@@ -1012,8 +1044,8 @@ function domopi_init()
 #	-g groupid TODO
 #	-s default state TODO
 #	-p <patchNumber>
-#	-t <type>
-#	-w <wiredPI>
+#	-t <type>	TODO: letto dal file di struttura
+#	-w <wiredPI>	TODO: letto dal file di struttura
 #
 #	@author Andrea Tassotti
 #
@@ -1023,6 +1055,12 @@ function domopi_create()
 	local VERBOSE=false
 	local PATCH
 	local ret
+
+	if [ ! -f "$DOMOPI_MODULES_CONF" ]; then
+		echo "ERROR: hardware configuration missing." >&2
+		return 2
+	fi
+
 	# Il file di configurazione deve esistere inizializzato
 	# Read schema
 	_domopi_file_open "$DOMOPI_GLOBAL_CONF"
@@ -1159,6 +1197,17 @@ function domopi_destroy()
 #	$2 - value to match
 #	$3 - New state
 #
+#	Utilizza DOMOPI_PRE_TRANSITION_CALLBACK per eseguire un codice
+#	prima di salvare la configurazione di stato: fornire nome di una
+#	funzione definita
+#	Utilizza DOMOPI_POST_TRANSITION_CALLBACK per eseguire un codice
+#	prima di salvare la configurazione di stato: fornire nome di una
+#	funzione definita
+#	In entrambi i casi viene passato il valore del nuovo stato; sono
+#	disponibili le colonne della configurazione sensorID e wiredpi con:
+#	${DOMOPI_sensorID[@]}
+#	${DOMOPI_wiredpi[@]}
+#
 # TODO: Supportare gruppi e moduli
 #
 #	@author Andrea Tassotti
@@ -1174,11 +1223,14 @@ function _domopi_do_transition_by()
 	[ -z "${DOMOPI_patchin[0]}" ] && return 0
 
 	# Propagation
-	_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" sensorID patchout=${DOMOPI_patchin[0]} > /dev/null
+	_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" sensorID wiredpi patchout=${DOMOPI_patchin[0]} > /dev/null
 
-	# TODO: Divenga _domopi_where_in	
-	in=$( echo ${DOMOPI_sensorID[@]} | tr ' ' '|' )
+	${DOMOPI_PRE_TRANSITION_CALLBACK:-true} $3
+
+	in=${DOMOPI_sensorID[@]}
+	in=${in/\ /\|}
 	_domopi_update_row -v "$DOMOPI_GLOBAL_CONF" currentstate:$3 sensorID=$in
+	${DOMOPI_POST_TRANSITION_CALLBACK:-true} $3
 
 	return 0
 }
@@ -1199,6 +1251,17 @@ function _domopi_do_transition_by()
 #	(il primo se appartiene a più gruppi)
 #	Aggiorna gli stati di tutti i sensori con patchout pari al patchin
 #	del sensore su cui è applicato
+#
+#	Utilizza DOMOPI_PRE_TRANSITION_CALLBACK per eseguire un codice
+#	prima di salvare la configurazione di stato: fornire nome di una
+#	funzione definita
+#	Utilizza DOMOPI_POST_TRANSITION_CALLBACK per eseguire un codice
+#	prima di salvare la configurazione di stato: fornire nome di una
+#	funzione definita
+#	In entrambi i casi viene passato il valore del nuovo stato; sono
+#	disponibili le colonne della configurazione sensorID e wiredpi con:
+#	${DOMOPI_sensorID[@]}
+#	${DOMOPI_wiredpi[@]}
 #
 #
 #	TODO: Implementare selettore per modulo e gruppo

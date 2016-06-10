@@ -10,6 +10,24 @@ COLOR_RESET='\033[0m'
 IDOWIRED="ID"
 IDOWIRED_NEXT="WIREDPI"
 
+DOMOPI_PRE_TRANSITION_CALLBACK=test_callback
+
+# Callback per esecuzione attuazione nuova configurazione di stato
+#
+#	$1 - Nuovo stato
+#
+function test_callback()
+{
+	echo execute callback
+	#echo sensorID ${DOMOPI_sensorID[@]}
+	#echo wiredpi ${DOMOPI_wiredpi[@]}
+	for wirepi in ${DOMOPI_wiredpi[@]}
+	do
+		# rimuovere echo per eseguire
+		echo gpio write $wiredpi $1
+	done
+}
+
 
 function init()
 {
