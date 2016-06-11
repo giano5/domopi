@@ -43,12 +43,12 @@ DOMOPI_FILE_FINGERPRINT='# Automatically generatedfile: do not modify!'
 # Schemas is for generate initial configuration
 
 # Logical configuration
-DOMOPI_FILE_SCHEMA['global']='# groupID:deviceID:sensorID:patchin:patchout:wiredpi:type:mode:maxexecutiontime:order:defaultstate:currentstate:descriptionU:alias:groups'
+DOMOPI_FILE_SCHEMA['global']='# group:device:sensorID:patchin:patchout:wiredpi:type:mode:maxexecutiontime:order:defaultstate:currentstate:descriptionU:alias:groups'
 # NOTA: In caso di bash < 4.2 dichiarare a questo livello
 #declare -A DOMOPI_SCHEMA_COL_global
 
 # Physical configuration
-DOMOPI_FILE_SCHEMA['modules']='# deviceID:moduleID:descriptionU:wirepi:type:used'
+DOMOPI_FILE_SCHEMA['modules']='# device:modulename:wiredpi:type:used'
 # NOTA: In caso di bash < 4.2 dichiarare a questo livello
 #declare -A DOMOPI_SCHEMA_COL_modules
 
@@ -408,7 +408,7 @@ function _domopi_select_row()
 	HEADER=true
 	FOOTER=true
 
-	[ -z "$DOMOPI_SCHEMA_NAME" ] && return 1
+	[ -z "$DOMOPI_SCHEMA_NAME" ] && echo schema missing >&2 && return 1
 
 	# Processa opzioni locali
 	local OPTIND=1 OPTARG opt
@@ -490,6 +490,7 @@ function _domopi_select_row()
 	done
 
 	local _TMP=$(mktemp)
+
 	# 
 	# NOTA: cut non riordina i campi estratti
 	if [ -n "$cut_fields" ] ; then
@@ -511,6 +512,8 @@ function _domopi_select_row()
 		fi	> $SPOOL
 
 		# Impossibile costrutto pipe: deve generare variabili globali
+# TODO: ulteriore miglioramento rimuovendo cut eprocessando cut_fields tramite selezione su array row
+#
 		egrep "$row_to_match" "$file" | cut -d: -f$cut_fields > $_TMP
 		while read row
 		do
@@ -1054,18 +1057,17 @@ function domopi_create()
 {
 	local VERBOSE=false
 	local PATCH
+	local PATCHNUMBER
 	local ret
+	local device
+	local WIREDPI
+	local TYPE
 
 	if [ ! -f "$DOMOPI_MODULES_CONF" ]; then
 		echo "ERROR: hardware configuration missing." >&2
 		return 2
 	fi
 
-	# Il file di configurazione deve esistere inizializzato
-	# Read schema
-	_domopi_file_open "$DOMOPI_GLOBAL_CONF"
-	fd=$?	# Non usato direttamente
-	[ $fd -eq 255 ] && return 1
 
 	# Processa opzioni locali
 	local OPTIND=1 OPTARG opt
@@ -1105,6 +1107,33 @@ function domopi_create()
 		return 1
 		;;
 	esac
+
+	# Ricerca wiredpi per tipo tra disponibili
+	if [ -z "$WIREDPI" ]; then
+		# Read schema
+		_domopi_file_open "$DOMOPI_MODULES_CONF"
+		fd=$?	# Non usato direttamente
+		[ $fd -eq 255 ] && return 1
+		#$DOMOPI_SCHEMA_NAME
+
+		_domopi_select_row -q "$DOMOPI_MODULES_CONF" device wiredpi type=$TYPE used=false >/dev/null
+		read device REST <<< "${DOMOPI_device[@]}"
+		read WIREDPI REST <<< "${DOMOPI_wiredpi[@]}"
+		if [ -z "$WIREDPI" ]
+		then
+			echo "ERROR: no more wiredpi available" >&2
+			return 1
+		fi
+		_domopi_update_row "$DOMOPI_MODULES_CONF" used:true device=$device wiredpi=$WIREDPI
+
+		_domopi_file_close $fd
+	fi
+
+
+	# Read schema
+	_domopi_file_open "$DOMOPI_GLOBAL_CONF"
+	fd=$?	# Non usato direttamente
+	[ $fd -eq 255 ] && return 1
 		
 
 	case "$1" in
@@ -1122,7 +1151,6 @@ function domopi_create()
 		;;
 	esac
 
-	[ $fd -eq 255 ] && return 255	
 	_domopi_file_close $fd
 
 	return $ret
@@ -1308,7 +1336,6 @@ function domopi_set_state()
 		[ $ret -eq 0 ] && _domopi_update_row "$DOMOPI_GLOBAL_CONF" currentstate:$2 $COLUMN_TO_MATCH="$1"
 	fi
 
-	#[ $fd -eq 255 ] && return 255	
 	_domopi_file_close $fd
 	return $ret
 }
@@ -1367,7 +1394,6 @@ function domopi_get_state()
 			_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" currentstate $COLUMN_TO_MATCH="$1"
 	fi
 
-	#[ $fd -eq 255 ] && return 255	
 	_domopi_file_close $fd
 	return 0
 }
@@ -1401,17 +1427,16 @@ function domopi_list()
 		;;
 	esac
 
-	#[ $fd -eq 255 ] && return 255	
 	_domopi_file_close $fd
 }
 
 
 ##
-#	Ricerca i wirepi utilizzati in configurazione
+#	Ricerca i wiredpi utilizzati in configurazione
 #
 #	Le opzioni di ricerca sono cumulabili in AND
 #	
-#	-d<id>	ricerca per deviceID
+#	-d<id>	ricerca per device
 #	-s<id>	ricerca per sensorID
 #	-t<in/out>	ricerca per tipo
 #	-v	Verbose mode
@@ -1433,7 +1458,7 @@ function domopi_get_wiredpi()
 	local OPTIND=1 OPTARG opt
 	while getopts ":d:s:t:vw:" opt; do
 		case $opt in
-		d)	COLUMNS_TO_MATCH="${COLUMNS_TO_MATCH}deviceID=$OPTARG " ;;
+		d)	COLUMNS_TO_MATCH="${COLUMNS_TO_MATCH}device=$OPTARG " ;;
 		s)	COLUMNS_TO_MATCH="${COLUMNS_TO_MATCH}sensorID=$OPTARG " ;;
 		t)	case "$OPTARG" in	
 			in)	 COLUMNS_TO_MATCH="${COLUMNS_TO_MATCH}patchin='!null' " ;;
@@ -1453,7 +1478,6 @@ function domopi_get_wiredpi()
 		eval _domopi_select_row -q \"$DOMOPI_GLOBAL_CONF\" wiredpi $COLUMNS_TO_MATCH
 	fi
 
-	#[ $fd -eq 255 ] && return 255	
 	_domopi_file_close $fd
 }
 

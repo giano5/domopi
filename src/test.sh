@@ -115,7 +115,7 @@ function create()
 		echo -n "Patch number (lascare vuoto se non usato): "
 		read PATCH
 	
-		echo -n "WiredPI number (lascare vuoto se non usato): "
+		echo -n "WiredPI number (lascare vuoto per automatico): "
 		read WIRED
 
 		domopi_timer_start create
