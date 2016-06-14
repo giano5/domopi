@@ -24,10 +24,34 @@
 #
 
 # Global variables
+
+# Production
+#DOMOPI_CONF_PATH=/usr/local/etc/
+# Development
 DOMOPI_CONF_PATH=.
+
+# Production
+#DOMOPI_CONF_TEMPLATE_PATH=/usr/local/var/lib/domopi
+# Development
+DOMOPI_CONF_TEMPLATE_PATH=.
+
+# Production
+#DOMOPI_BIN_PATH=/usr/local/bin
+# Development
 DOMOPI_BIN_PATH=.
+
 # Percorso istallazione di questo file (ad uso interno)
+# Production
+#DOMOPI_API_PATH=/usr/local/libexec/domopi.functions
+# Development
 DOMOPI_API_PATH=domopi.functions
+
+
+if [ -d "$DOMOPI_CONF_PATH/domopi.d" ]; then
+	DOMOPI_EXTENDED_CONF_PATH=$DOMOPI_CONF_PATH/domopi.d/
+else
+	DOMOPI_EXTENDED_CONF_PATH=$DOMOPI_CONF_PATH
+fi
 
 # Requisiti
 DOMOPI_REQUIRES="awk bc cut egrep grep sed tr"
@@ -35,9 +59,11 @@ DOMOPI_REQUIRES="awk bc cut egrep grep sed tr"
 declare -A DOMOPI_FILE_SCHEMA
 
 # Configuration files
-DOMOPI_IDENT_FILE=$DOMOPI_CONF_PATH/ident.cfg
-DOMOPI_GLOBAL_CONF=$DOMOPI_CONF_PATH/global.cfg
-DOMOPI_MODULES_CONF=$DOMOPI_CONF_PATH/modules.cfg
+DOMOPI_CONF_EXTENTION=cfg
+DOMOPI_IDENT_FILE=$DOMOPI_CONF_PATH/ident.$DOMOPI_CONF_EXTENTION
+DOMOPI_GLOBAL_CONF=$DOMOPI_CONF_PATH/global.$DOMOPI_CONF_EXTENTION
+DOMOPI_MODULES_CONF=modules.$DOMOPI_CONF_EXTENTION
+
 DOMOPI_FILE_FINGERPRINT='# Automatically generatedfile: do not modify!'
 
 # Schemas is for generate initial configuration
@@ -988,10 +1014,13 @@ function domopi_init()
 		return 1
 	fi
 
-	if [ ! -f "$DOMOPI_MODULES_CONF" ]; then
+	if [ ! -f "$DOMOPI_CONF_TEMPLATE_PATH/$DOMOPI_MODULES_CONF" ]; then
 		echo "ERROR: hardware configuration missing." >&2
 		return 2
 	fi
+
+	# Rimuove vecchie configurazioni
+	rm "$DOMOPI_EXTENDED_CONF_PATH/${DOMOPI_MODULES_CONF%%.$DOMOPI_CONF_EXTENTION}-"*.$DOMOPI_CONF_EXTENTION
 
 	# Generate Identity file
 
@@ -1010,6 +1039,9 @@ function domopi_init()
 	echo "$DOMOPI_FILE_FINGERPRINT" '$global$' >$DOMOPI_GLOBAL_CONF
 	echo "${DOMOPI_FILE_SCHEMA['global']}" >>$DOMOPI_GLOBAL_CONF
 
+	# Install exportable version
+	cp "$DOMOPI_CONF_TEMPLATE_PATH/$DOMOPI_MODULES_CONF" "$DOMOPI_EXTENDED_CONF_PATH/${DOMOPI_MODULES_CONF%%.$DOMOPI_CONF_EXTENTION}-$UUID.$DOMOPI_CONF_EXTENTION"
+
 	return 0
 }
 
@@ -1021,10 +1053,10 @@ function domopi_init()
 public domopi_intall
 function domopi_install
 {
-	if [ ! -f "$DOMOPI_MODULES_CONF" ]; then
+	if [ ! -f "$DOMOPI_CONF_TEMPLATE_PATH/$DOMOPI_MODULES_CONF" ]; then
 		# Generate global configuration file (empty with schema)
-		echo "$DOMOPI_FILE_FINGERPRINT" '$modules$' >$DOMOPI_MODULES_CONF
-		echo "${DOMOPI_FILE_SCHEMA['modules']}" >>$DOMOPI_MODULES_CONF
+		echo "$DOMOPI_FILE_FINGERPRINT" '$modules$' >$DOMOPI_CONF_TEMPLATE_PATH/$DOMOPI_MODULES_CONF
+		echo "${DOMOPI_FILE_SCHEMA['modules']}" >>$DOMOPI_CONF_TEMPLATE_PATH/$DOMOPI_MODULES_CONF
 	else
 		echo "ERROR: hardware configuration exists." >&2
 		return 2
@@ -1062,12 +1094,14 @@ function domopi_create()
 	local device
 	local WIREDPI
 	local TYPE
+	local MODULES_CONF_FILE
 
-	if [ ! -f "$DOMOPI_MODULES_CONF" ]; then
-		echo "ERROR: hardware configuration missing." >&2
+	MODULES_CONF_FILE="$DOMOPI_EXTENDED_CONF_PATH/${DOMOPI_MODULES_CONF%%.$DOMOPI_CONF_EXTENTION}-$DOMOPI_IDENT_UUID.$DOMOPI_CONF_EXTENTION" 
+
+	if [ ! -f "$MODULES_CONF_FILE" ]; then
+		echo "ERROR: hardware running configuration missing." >&2
 		return 2
 	fi
-
 
 	# Processa opzioni locali
 	local OPTIND=1 OPTARG opt
@@ -1108,15 +1142,16 @@ function domopi_create()
 		;;
 	esac
 
+
 	# Ricerca wiredpi per tipo tra disponibili
 	if [ -z "$WIREDPI" ]; then
 		# Read schema
-		_domopi_file_open "$DOMOPI_MODULES_CONF"
+		_domopi_file_open $MODULES_CONF_FILE
 		fd=$?	# Non usato direttamente
 		[ $fd -eq 255 ] && return 1
 		#$DOMOPI_SCHEMA_NAME
 
-		_domopi_select_row -q "$DOMOPI_MODULES_CONF" device wiredpi type=$TYPE used=false >/dev/null
+		_domopi_select_row -q "$MODULES_CONF_FILE" device wiredpi type=$TYPE used=false >/dev/null
 		read device REST <<< "${DOMOPI_device[@]}"
 		read WIREDPI REST <<< "${DOMOPI_wiredpi[@]}"
 		if [ -z "$WIREDPI" ]
@@ -1124,7 +1159,7 @@ function domopi_create()
 			echo "ERROR: no more wiredpi available" >&2
 			return 1
 		fi
-		_domopi_update_row "$DOMOPI_MODULES_CONF" used:true device=$device wiredpi=$WIREDPI
+		_domopi_update_row "$MODULES_CONF_FILE" used:true device=$device wiredpi=$WIREDPI
 
 		_domopi_file_close $fd
 	fi
@@ -1485,6 +1520,13 @@ function domopi_get_wiredpi()
 #-----------------------------------------------
 # End-of-API
 #-----------------------------------------------
+
+
+#
+# Bootstrap
+#
+[ -f $DOMOPI_IDENT_FILE ] && domopi_ident
+
 
 # Make private internal function
 #
