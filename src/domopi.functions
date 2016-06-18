@@ -1058,7 +1058,7 @@ function domopi_init()
 #
 #	@author Andrea Tassotti
 #
-public domopi_intall
+public domopi_install
 function domopi_install
 {
 	if [ ! -f "$DOMOPI_CONF_TEMPLATE_PATH/$DOMOPI_MODULES_CONF" ]; then
