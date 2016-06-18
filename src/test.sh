@@ -1,16 +1,51 @@
 #!/bin/bash
 
-# Indicare eventuale altro percorso
-. domopi.functions
-
-
 COLOR_BLUE='\033[34m'
 COLOR_RED='\033[1;31m'
 COLOR_RESET='\033[0m'
+TITLE_COLOR='\033[1;39;46m'
+CLOCK_COLOR='\033[1;39;44m'
+
+# Indicare eventuale altro percorso
+. domopi.functions
+
+# Show running clock
+#
+#	ATTENZIONE! Eseguire prima di impostare TRAP segnali
+function clock_start()
+{
+	while sleep 1;
+	do
+		tput sc
+		tput cup 0 $(($(tput cols)-11))
+		echo -e "$CLOCK_COLOR`date +%r`$COLOR_RESET"
+		tput rc
+	done &
+	CLOCK_PID=$!
+}
+
+function clock_stop()
+{
+	( kill $CLOCK_PID ) >/dev/null 2>&1
+}
+
+
+trap cleanup EXIT
+
 IDOWIRED="ID"
 IDOWIRED_NEXT="WIREDPI"
 
 DOMOPI_PRE_TRANSITION_CALLBACK=test_callback
+
+#
+# Funzione pulizia eventuali procedure e situazioni sospese
+#
+function cleanup()
+{
+	clock_stop
+	clear
+	return 0;
+}
 
 # Callback per esecuzione attuazione nuova configurazione di stato
 #
@@ -188,9 +223,9 @@ function state_simulation()
 		[[ "$ID" = "end" ]] && break;
 		echo -ne "Stato corrente del sensore $ID: $COLOR_BLUE"
 		if [ $IDOWIRED = "ID" ]; then
-			domopi_get_state -q -n $ID
+			domopi_get_state -n $ID
 		else
-			domopi_get_state -q -w $ID
+			domopi_get_state -w $ID
 		fi
 		echo -e $COLOR_RESET
 		echo -n "Nuovo stato del sensore $ID (lasciare vuoto per non cambiare): "
@@ -228,8 +263,12 @@ function state_simulation()
 function header()
 {
 	clear
-	echo 'DOMOPI TEST PROGRAM'
-	echo '----------------------------'
+	echo -e "$TITLE_COLOR DOMOPI TEST PROGRAM                                                              $COLOR_RESET"
+	tput sc
+	tput cup 0 $(($(tput cols)-11))
+	echo -e "$CLOCK_COLOR`date +%r`$COLOR_RESET"
+	echo "--------------------------------------------------------------------------------"
+	clock_start
 }
 
 
@@ -241,10 +280,13 @@ function master_page()
 	header
 	echo '[1] - Inizializzazione e configurazioni'
 	echo '[2] - Creazione sensore'
-	echo '[3] - Lista sensori'
-	echo '[4] - Simulazione stati'
-	echo '[5] - Rimozione sensore'
-	echo '[6] - Lista wiredpi configurati'
+	echo "[3] - Modifica sensore"
+	echo '[4] - Creazione gruppo'
+	echo '[5] - Aggiungi sensore a gruppo'
+	echo '[6] - Lista sensori'
+	echo '[7] - Simulazione stati'
+	echo '[8] - Rimozione sensore'
+	echo '[9] - Lista wiredpi configurati'
 	echo '[q] - Quit'
 }
 
@@ -261,15 +303,30 @@ function master_page_2()
 
 function master_page_3()
 {
-	list
+	CURRENT_PAGE="modify_page $CURRENT_PAGE" 
 }
 
 function master_page_4()
 {
-	state_simulation 
+	domopi_notice "NON ANCORA IMPLEMENTATO"
 }
 
 function master_page_5()
+{
+	domopi_notice "NON ANCORA IMPLEMENTATO"
+}
+
+function master_page_6()
+{
+	list
+}
+
+function master_page_7()
+{
+	state_simulation 
+}
+
+function master_page_8()
 {
 
 	DONE="false"
@@ -283,7 +340,7 @@ function master_page_5()
 	done
 }
 
-function master_page_6()
+function master_page_9()
 {
 # TODO: Scegliere opzioni di selezioe per device (-d) o persensore (-s) o per tipo (-t)
 	echo "Tutti i wired configurati:"
@@ -343,6 +400,65 @@ function create_page_2()
 }
 
 
+function modify_page()
+{
+	header
+	echo '[1] - Cambia Patch'
+	echo '[2] - Cambia Tempo massimo di esecuzione'
+	echo '[3] - Cambia Stato iniziale'
+	echo '[4] - Cambia descrizione'
+	echo '[q] - Indietro'
+}
+
+function modify_page_1()
+{
+	DONE="false"
+	while [ $DONE != "true" ]
+	do
+		echo -n "$IDOWIRED del sensore (scivere 'end' per terminare): "
+		read ID
+		[ -z "$ID" ] && continue
+		[[ "$ID" = "end" ]] && break;
+		if [ $IDOWIRED = "ID" ]; then
+			PATCH=$( domopi_get_patch -s $ID )
+		else
+			PATCH=$( domopi_get_patch -w $ID )
+		fi
+
+		echo -n "Patch number (attuale $PATCH Lasciare vuoto per annullare modifiche): "
+		read PATCH
+		[ -z "$PATCH" ] && break;
+
+		domopi_timer_start modify
+		if [ $IDOWIRED = "ID" ]; then
+			domopi_modify -s $ID patch $PATCH
+		else
+			domopi_modify -w $ID patch $PATCH
+		fi
+		domopi_time_elapsed modify
+	done
+}
+
+function modify_page_2()
+{
+	#maxExecutionTime
+	domopi_notice "NON ANCORA IMPLEMENTATO"
+}
+
+function modify_page_3()
+{
+	#defaultstate
+	domopi_notice "NON ANCORA IMPLEMENTATO"
+}
+
+function modify_page_4()
+{
+	#descriptionU
+	domopi_notice "NON ANCORA IMPLEMENTATO"
+}
+
+
+
 #
 # MAIN PROGRAM ----------------------------------------
 #
@@ -351,7 +467,9 @@ SHUTDOWN=false
 CURRENT_PAGE=master_page
 while ! $SHUTDOWN
 do
+	clock_stop
 	${CURRENT_PAGE}
+	echo
 	echo -ne "Seleziona una funzione: "
 	read OP
 	[ -z "$OP" ] && continue
@@ -367,7 +485,6 @@ do
 	else
 		echo -e "${COLOR_RED}NON IMPLEMENTATO${COLOR_RESET}"
 	fi
-
 done
 
 echo Bye

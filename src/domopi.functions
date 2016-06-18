@@ -69,7 +69,7 @@ DOMOPI_FILE_FINGERPRINT='# Automatically generatedfile: do not modify!'
 # Schemas is for generate initial configuration
 
 # Logical configuration
-DOMOPI_FILE_SCHEMA['global']='# group:device:sensorID:patchin:patchout:wiredpi:type:mode:maxexecutiontime:order:defaultstate:currentstate:descriptionU:alias:groups'
+DOMOPI_FILE_SCHEMA['global']='# groupID:device:sensorID:patchin:patchout:wiredpi:type:mode:maxexecutiontime:order:defaultstate:currentstate:descriptionU:alias:groups'
 # NOTA: In caso di bash < 4.2 dichiarare a questo livello
 #declare -A DOMOPI_SCHEMA_COL_global
 
@@ -468,6 +468,12 @@ function _domopi_select_row()
 			position=$((position+1))
 		fi
 	done
+
+	if [ ${#columns[@]} -eq 0 ] 
+	then
+		echo "ERROR: no select list column" >&2
+		return 1
+	fi
 
 	local row_to_match=""
 
@@ -1020,7 +1026,7 @@ function domopi_init()
 	fi
 
 	# Rimuove vecchie configurazioni
-	rm "$DOMOPI_EXTENDED_CONF_PATH/${DOMOPI_MODULES_CONF%%.$DOMOPI_CONF_EXTENTION}-"*.$DOMOPI_CONF_EXTENTION
+	rm -f "$DOMOPI_EXTENDED_CONF_PATH/${DOMOPI_MODULES_CONF%%.$DOMOPI_CONF_EXTENTION}-"*.$DOMOPI_CONF_EXTENTION
 
 	# Generate Identity file
 
@@ -1049,6 +1055,8 @@ function domopi_init()
 ##
 #
 #	Genera file di struttura hardware
+#
+#	@author Andrea Tassotti
 #
 public domopi_intall
 function domopi_install
@@ -1128,8 +1136,7 @@ function domopi_create()
 		[ -n "$PATCHNUMBER" ] && PATCH="patchin:$PATCHNUMBER" 
 		;;
 	"ALARM")
-		[ -n "$PATCHNUMBER" ] && PATCH="patchout:$PATCHNUMBER" 
-		[ -n "$PATCHNUMBER" ] && PATCH="patchin:$PATCHNUMBER" 
+		[ -n "$PATCHNUMBER" ] && PATCH="patchout:$PATCHNUMBER patchin:$PATCHNUMBER" 
 		;;
 	"OTHER")
 		;;
@@ -1173,7 +1180,7 @@ function domopi_create()
 
 	case "$1" in
 	sensor)
-		_domopi_insert_row "$DOMOPI_GLOBAL_CONF" sensorID:'*' "descriptionU:$2" wiredpi:"$WIREDPI" "$PATCH" 
+		_domopi_insert_row "$DOMOPI_GLOBAL_CONF" sensorID:'*' "descriptionU:$2" wiredpi:"$WIREDPI" type:"$TYPE" "$PATCH" 
 		ret=$?
 		;;
 	group)
@@ -1189,6 +1196,165 @@ function domopi_create()
 	_domopi_file_close $fd
 
 	return $ret
+}
+
+
+##
+#	Modifica attributi secondari per un sensore/gruppo
+#
+#	-g<ID>	Seleziona gruppo da modificare
+#	-s<ID>	Selettore da modificare
+#	-w<ID>	WiredPI da modificare
+#	I selettori sono mutialmente esclusivi
+#
+#	$1 - Nome attributo
+#	$2 - Nuovo valore
+#
+#	Attributi modificabili:
+#	- patch
+#	- maxExecutionTime
+#	- defaultstate
+#	- descriptionU
+#
+#	@author Andrea Tassotti
+#
+public domopi_modify
+function domopi_modify()
+{
+	local COLUMN_TO_MATCH=descriptionU
+	local GROUP=false
+	local ret=1
+	# Il file di configurazione deve esistere inizializzato
+	# Read schema
+	_domopi_file_open "$DOMOPI_GLOBAL_CONF"
+	fd=$?	# Non usato direttamente
+	[ $fd -eq 255 ] && return 1
+
+	# Processa opzioni locali
+	local OPTIND=1 OPTARG opt
+	while getopts ":g:s:w:" opt; do
+		case $opt in
+		g)	COLUMN_TO_MATCH="groups=[0-9\ ]*$OPTARG[0-9\ ]*";;
+		s)	COLUMN_TO_MATCH="sensorID=$OPTARG";;
+		w)	COLUMN_TO_MATCH="wiredpi=$OPTARG";;
+		:)	echo argument required ; return ;;
+		esac
+	done
+	shift $((OPTIND-1))
+
+	_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" descriptionU sensorID wiredpi type "$COLUMN_TO_MATCH" >/dev/null
+
+	for row in ${!DOMOPI_type[@]}
+	do
+		#echo ${DOMOPI_sensorID[$row]} ${DOMOPI_wiredpi[$row]} ${DOMOPI_descriptionU[$row]} ${DOMOPI_type[$row]}
+
+		PATCH=""
+		case "${DOMOPI_type[$row]}" in
+		"LIGHT")
+			[ -n "$2" ] && PATCH="patchout:$2" 
+			;;
+		"NOLIGHT")
+			[ -n "$2" ] && PATCH="patchout:$2" 
+			;;
+		"SWITCH")
+			[ -n "$2" ] && PATCH="patchin:$2" 
+			;;
+		"ALARM")
+			[ -n "$2" ] && PATCH="patchout:$2 patchin:$2" 
+			;;
+		"OTHER")
+			;;
+		"PULSE")
+			[ -n "$2" ] && PATCH="patchin:$2" 
+			;;
+		*)
+			;;
+		esac
+	
+
+		case "$1" in
+		patch)
+			_domopi_update_row "$DOMOPI_GLOBAL_CONF" "$PATCH" "$COLUMN_TO_MATCH"
+			;;
+		maxExecutionTime)
+			;;
+		defaultstate)
+			;;
+		descriptionU)
+			;;
+		esac
+	done
+
+	_domopi_file_close $fd
+	return 0
+}
+
+
+##
+#	Identifica il patch number per un sensore o gruppo
+#
+#	-g<ID>	Seleziona gruppo da modificare
+#	-s<ID>	Selettore da modificare
+#	-w<ID>	WiredPI da modificare
+#	I selettori sono mutialmente esclusivi
+#
+#	@author Andrea Tassotti
+#
+public domopi_get_patch
+function domopi_get_patch()
+{
+	local COLUMN_TO_MATCH=descriptionU
+	local ret=1
+	# Il file di configurazione deve esistere inizializzato
+	# Read schema
+	_domopi_file_open "$DOMOPI_GLOBAL_CONF"
+	fd=$?	# Non usato direttamente
+	[ $fd -eq 255 ] && return 1
+
+	# Processa opzioni locali
+	local OPTIND=1 OPTARG opt
+	while getopts ":g:s:w:" opt; do
+		case $opt in
+		g)	COLUMN_TO_MATCH="groups=[0-9\ ]*$OPTARG[0-9\ ]*";;
+		s)	COLUMN_TO_MATCH="sensorID=$OPTARG";;
+		w)	COLUMN_TO_MATCH="wiredpi=$OPTARG";;
+		:)	echo argument required ; return ;;
+		esac
+	done
+	shift $((OPTIND-1))
+
+	_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" type patchin patchout "$COLUMN_TO_MATCH" >/dev/null
+
+	for row in ${!DOMOPI_type[@]}
+	do
+		#echo ${DOMOPI_sensorID[$row]} ${DOMOPI_wiredpi[$row]} ${DOMOPI_descriptionU[$row]} ${DOMOPI_type[$row]}
+
+		PATCH=""
+		case "${DOMOPI_type[$row]}" in
+		"LIGHT")
+			echo ${DOMOPI_patchout[$row]}
+			;;
+		"NOLIGHT")
+			echo ${DOMOPI_patchout[$row]}
+			;;
+		"SWITCH")
+			echo ${DOMOPI_patchin[$row]}
+			;;
+		"ALARM")
+			echo ${DOMOPI_patchout[$row]} ${DOMOPI_patchin[$row]}
+			;;
+		"OTHER")
+			;;
+		"PULSE")
+			echo ${DOMOPI_patchin[$row]}
+			;;
+		*)
+			;;
+		esac
+	done
+
+	_domopi_file_close $fd
+	return 0
 }
 
 
@@ -1216,7 +1382,7 @@ function domopi_destroy()
 	fd=$?	# Non usato direttamente
 	[ $fd -eq 255 ] && return 1
 
-	# Processa opzioni locali
+	# rocessa opzioni locali
 	local OPTIND=1 OPTARG opt
 	while getopts ":vn" opt; do
 		case $opt in
@@ -1391,7 +1557,7 @@ function domopi_set_state()
 #	Non forza uso di alcun tipo (ouo' essere numerico o alfanumerico)
 #
 #
-#	Esempio: domopi_set_state 1 off
+#	Esempio: domopi_get_state -n 1
 #
 #
 #	TODO: Implementare selettore per modulo e gruppo
@@ -1428,6 +1594,51 @@ function domopi_get_state()
 	else
 			_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" currentstate $COLUMN_TO_MATCH="$1"
 	fi
+
+	_domopi_file_close $fd
+	return 0
+}
+
+
+##
+#	Legge il tipo di un sensore
+#
+#	$1 - Criterio di ricerca
+#	-n - Usa criterio di ricerca numerico (ID) invece che espressione regolare su descrizione
+#	-w - Usa un criterio di ricerca numerico su wiredPI
+#
+#	Restituisce il tipo in STDOUT 
+#	Distribuito anche come ${DOMOPI_type[0]}
+#
+#	NOTA: Non esiste funzione set in quanto il tipo è parte 
+#	della definizione di un oggetto
+#
+#	Esempio: domopi_get_state -n 1 
+#
+#	@author Andrea Tassotti
+#
+public domopi_get_type
+function domopi_get_type()
+{
+	local COLUMN_TO_MATCH=descriptionU
+	# Il file di configurazione deve esistere inizializzato
+	# Read schema
+	_domopi_file_open "$DOMOPI_GLOBAL_CONF"
+	fd=$?	# Non usato direttamente
+	[ $fd -eq 255 ] && return 1
+
+	# Processa opzioni locali
+	local OPTIND=1 OPTARG opt
+	while getopts ":gnw" opt; do
+		case $opt in
+		n)	COLUMN_TO_MATCH=sensorID ;;
+		w)	COLUMN_TO_MATCH=wiredpi ;;
+		:)	echo argument required ; return ;;
+		esac
+	done
+	shift $((OPTIND-1))
+
+	_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" type $COLUMN_TO_MATCH="$1"
 
 	_domopi_file_close $fd
 	return 0
@@ -1476,6 +1687,7 @@ function domopi_list()
 #	-t<in/out>	ricerca per tipo
 #	-v	Verbose mode
 #
+#	@author Andrea Tassotti
 #
 public domopi_get_wiredpi
 function domopi_get_wiredpi()
@@ -1525,7 +1737,8 @@ function domopi_get_wiredpi()
 #
 # Bootstrap
 #
-[ -f $DOMOPI_IDENT_FILE ] && domopi_ident
+echo DomoPI API bootstrap ...
+[ -f $DOMOPI_IDENT_FILE ] && domopi_ident 
 
 
 # Make private internal function
