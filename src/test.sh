@@ -217,7 +217,7 @@ function state_simulation()
 	while [ $DONE != "true" ]
 	do
 		echo 'Lettura stato'
-		echo -n "$IDOWIRED del sensore (scivere 'end' per terminare): "
+		echo -n "$IDOWIRED del sensore (scrivere 'end' per terminare): "
 		read ID
 		[ -z "$ID" ] && continue
 		[[ "$ID" = "end" ]] && break;
@@ -278,16 +278,17 @@ function header()
 function master_page()
 {
 	header
-	echo '[1] - Inizializzazione e configurazioni'
-	echo '[2] - Creazione sensore'
-	echo "[3] - Modifica sensore"
-	echo '[4] - Creazione gruppo'
-	echo '[5] - Aggiungi sensore a gruppo'
-	echo '[6] - Lista sensori'
-	echo '[7] - Simulazione stati'
-	echo '[8] - Rimozione sensore'
-	echo '[9] - Lista wiredpi configurati'
-	echo '[q] - Quit'
+	echo '[ 1] - Inizializzazione e configurazioni'
+	echo '[ 2] - Creazione sensore'
+	echo "[ 3] - Modifica sensore"
+	echo '[ 4] - Creazione gruppo'
+	echo '[ 5] - Aggiungi sensore a gruppo'
+	echo '[ 6] - Lista sensori'
+	echo '[ 7] - Simulazione stati'
+	echo '[ 8] - Rimozione sensore'
+	echo '[ 9] - Lista wiredpi configurati'
+	echo '[10] - Lista gruppi'
+	echo '[ q] - Quit'
 }
 
 function master_page_1()
@@ -308,11 +309,34 @@ function master_page_3()
 
 function master_page_4()
 {
-	domopi_notice "NON ANCORA IMPLEMENTATO"
+	echo
+	echo "Creazione gruppo:"
+
+	DONE="false"
+	while [ $DONE != "true" ]
+	do
+		echo -n "Nome del gruppo (scrivere 'end' per terminare): "
+		read DESC
+		[[ "$DESC" = "end" ]] && break;
+
+		domopi_timer_start create
+		domopi_create group "$DESC"
+		domopi_time_elapsed create
+	done
 }
 
 function master_page_5()
 {
+	echo 'Aggiungi sensori ad un gruppo'
+	echo -n "ID del gruppo : "
+	read GROUPID
+	[[ "$GROUPID" = "end" ]] && return;
+
+		echo -n "ID del sensore (scrivere 'end' per terminare): "
+		read SENSORID
+		[[ "$SENSORID" = "end" ]] && break;
+
+	domopi_group_add_sensor $GROUPID $SENSORID
 	domopi_notice "NON ANCORA IMPLEMENTATO"
 }
 
@@ -332,7 +356,7 @@ function master_page_8()
 	DONE="false"
 	while [ $DONE != "true" ]
 	do
-		echo -n "ID del sensore da rimuovere (scivere 'end' per terminare): "
+		echo -n "ID del sensore da rimuovere (scrivere 'end' per terminare): "
 		read ID
 		[ -z "$ID" ] && continue
 		[[ "$ID" = "end" ]] && break;
@@ -415,7 +439,7 @@ function modify_page_1()
 	DONE="false"
 	while [ $DONE != "true" ]
 	do
-		echo -n "$IDOWIRED del sensore (scivere 'end' per terminare): "
+		echo -n "$IDOWIRED del sensore (scrivere 'end' per terminare): "
 		read ID
 		[ -z "$ID" ] && continue
 		[[ "$ID" = "end" ]] && break;
@@ -441,20 +465,80 @@ function modify_page_1()
 
 function modify_page_2()
 {
-	#maxExecutionTime
-	domopi_notice "NON ANCORA IMPLEMENTATO"
+	DONE="false"
+	while [ $DONE != "true" ]
+	do
+		echo -n "$IDOWIRED del sensore (scrivere 'end' per terminare): "
+		read ID
+		[ -z "$ID" ] && continue
+		[[ "$ID" = "end" ]] && break;
+
+		echo -n "MaxExecutionTime (Lasciare vuoto per annullare modifiche): "
+		read MAXTIME
+		[ -z "$MAXTIME" ] && break;
+
+		domopi_timer_start modify
+		if [ $IDOWIRED = "ID" ]; then
+			domopi_modify -s $ID maxexecutiontime $MAXTIME
+		else
+			domopi_modify -w $ID maxexecutiontime $MAXTIME
+		fi
+		domopi_time_elapsed modify
+	done
 }
 
 function modify_page_3()
 {
-	#defaultstate
-	domopi_notice "NON ANCORA IMPLEMENTATO"
+	DONE="false"
+	while [ $DONE != "true" ]
+	do
+		echo -n "$IDOWIRED del sensore (scrivere 'end' per terminare): "
+		read ID
+		[ -z "$ID" ] && continue
+		[[ "$ID" = "end" ]] && break;
+
+		echo -n "DefaultState (Lasciare vuoto per annullare modifiche): "
+		read STATE
+		[ -z "$STATE" ] && break;
+
+		domopi_timer_start modify
+		if [ $IDOWIRED = "ID" ]; then
+			domopi_modify -s $ID defaultstate $STATE
+		else
+			domopi_modify -w $ID defaultstate $STATE
+		fi
+		domopi_time_elapsed modify
+	done
 }
 
 function modify_page_4()
 {
-	#descriptionU
-	domopi_notice "NON ANCORA IMPLEMENTATO"
+	DONE="false"
+	while [ $DONE != "true" ]
+	do
+		echo -n "$IDOWIRED del sensore (scrivere 'end' per terminare): "
+		read ID
+		[ -z "$ID" ] && continue
+		[[ "$ID" = "end" ]] && break;
+		if [ $IDOWIRED = "ID" ]; then
+			DESC=$( domopi_get_description -s $ID )
+		else
+			DESC=$( domopi_get_description -w $ID )
+		fi
+
+		echo "$IDOWIRED $ID : $DESC"
+		echo -n "Nuova descrizione (Lasciare vuoto per annullare modifiche): "
+		read DESC
+		[ -z "$DESC" ] && break;
+
+		domopi_timer_start modify
+		if [ $IDOWIRED = "ID" ]; then
+			domopi_modify -s $ID description $DESC
+		else
+			domopi_modify -w $ID description $DESC
+		fi
+		domopi_time_elapsed modify
+	done
 }
 
 
