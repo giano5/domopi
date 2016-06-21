@@ -56,7 +56,7 @@ function test_callback()
 	echo execute callback
 	#echo sensorID ${DOMOPI_sensorID[@]}
 	#echo wiredpi ${DOMOPI_wiredpi[@]}
-	for wirepi in ${DOMOPI_wiredpi[@]}
+	for wiredpi in ${DOMOPI_wiredpi[@]}
 	do
 		# rimuovere echo per eseguire
 		echo gpio write $wiredpi $1
