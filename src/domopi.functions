@@ -69,12 +69,12 @@ DOMOPI_FILE_FINGERPRINT='# Automatically generatedfile: do not modify!'
 # Schemas is for generate initial configuration
 
 # Logical configuration
-DOMOPI_FILE_SCHEMA['global']='# groupID:device:sensorID:patchin:patchout:wiredpi:type:mode:maxexecutiontime:order:defaultstate:currentstate:descriptionU:alias:groups'
+DOMOPI_FILE_SCHEMA['global']='# groupID:device:sensorID:patchin:patchout:wiredpi:type:mode:maxexecutiontime:order:currentstate:descriptionU:alias:groups'
 # NOTA: In caso di bash < 4.2 dichiarare a questo livello
 #declare -A DOMOPI_SCHEMA_COL_global
 
 # Physical configuration
-DOMOPI_FILE_SCHEMA['modules']='# device:modulename:wiredpi:type:used'
+DOMOPI_FILE_SCHEMA['modules']='# device:modulename:defaultstate:wiredpi:type:used'
 # NOTA: In caso di bash < 4.2 dichiarare a questo livello
 #declare -A DOMOPI_SCHEMA_COL_modules
 
@@ -1048,6 +1048,8 @@ function domopi_init()
 	# Install exportable version
 	cp "$DOMOPI_CONF_TEMPLATE_PATH/$DOMOPI_MODULES_CONF" "$DOMOPI_EXTENDED_CONF_PATH/${DOMOPI_MODULES_CONF%%.$DOMOPI_CONF_EXTENTION}-$UUID.$DOMOPI_CONF_EXTENTION"
 
+	# Reboot API
+	[ -f $DOMOPI_IDENT_FILE ] && domopi_ident 
 	return 0
 }
 
@@ -1085,7 +1087,6 @@ function domopi_install
 #
 #	-m moduleid TODO
 #	-g groupid TODO
-#	-s default state TODO
 #	-p <patchNumber>
 #	-t <type>	TODO: letto dal file di struttura
 #	-w <wiredPI>	TODO: letto dal file di struttura
@@ -1100,6 +1101,7 @@ function domopi_create()
 	local PATCHNUMBER
 	local ret
 	local device
+	local DEFAULTSTATE
 	local WIREDPI
 	local TYPE=group
 	local MODULES_CONF_FILE
@@ -1107,6 +1109,7 @@ function domopi_create()
 	MODULES_CONF_FILE="$DOMOPI_EXTENDED_CONF_PATH/${DOMOPI_MODULES_CONF%%.$DOMOPI_CONF_EXTENTION}-$DOMOPI_IDENT_UUID.$DOMOPI_CONF_EXTENTION" 
 
 	if [ ! -f "$MODULES_CONF_FILE" ]; then
+echo $MODULES_CONF_FILE
 		echo "ERROR: hardware running configuration missing." >&2
 		return 2
 	fi
@@ -1153,10 +1156,6 @@ function domopi_create()
 	esac
 
 
-	# Read schema
-	_domopi_file_open "$DOMOPI_GLOBAL_CONF"
-	fd=$?	# Non usato direttamente
-	[ $fd -eq 255 ] && return 1
 
 	case "$1" in
 	sensor)
@@ -1168,8 +1167,10 @@ function domopi_create()
 			[ $fd -eq 255 ] && return 1
 			#$DOMOPI_SCHEMA_NAME
 
-			_domopi_select_row -q "$MODULES_CONF_FILE" device wiredpi type=$TYPE used=false >/dev/null
+			_domopi_select_row -q "$MODULES_CONF_FILE" device defaultstate wiredpi type=$TYPE used=false >/dev/null
+			# Legge solo la prima risposta
 			read device REST <<< "${DOMOPI_device[@]}"
+			read DEFAULTSTATE REST <<< "${DOMOPI_defaultstate[@]}"
 			read WIREDPI REST <<< "${DOMOPI_wiredpi[@]}"
 			if [ -z "$WIREDPI" ]
 			then
@@ -1182,12 +1183,26 @@ function domopi_create()
 			_domopi_file_close $fd
 		fi
 
-		_domopi_insert_row "$DOMOPI_GLOBAL_CONF" sensorID:'*' "descriptionU:$2" wiredpi:"$WIREDPI" type:"$TYPE" "$PATCH" 
+		# Read configuration schema
+		_domopi_file_open "$DOMOPI_GLOBAL_CONF"
+		fd=$?	# Non usato direttamente
+		[ $fd -eq 255 ] && return 1
+
+		_domopi_insert_row "$DOMOPI_GLOBAL_CONF" sensorID:'*' "descriptionU:$2" currentstate:"$DEFAULTSTATE" wiredpi:"$WIREDPI" type:"$TYPE" "$PATCH" 
 		ret=$?
+
+		_domopi_file_close $fd
 		;;
 	group)
+		# Read schema
+		_domopi_file_open "$DOMOPI_GLOBAL_CONF"
+		fd=$?	# Non usato direttamente
+		[ $fd -eq 255 ] && return 1
+
 		_domopi_insert_row "$DOMOPI_GLOBAL_CONF" groupID:'*' "descriptionU:$2"
 		ret=$?
+
+		_domopi_file_close $fd
 		;;
 	*)
 		echo FATAL: $1 not implemented >&2
@@ -1195,7 +1210,6 @@ function domopi_create()
 		;;
 	esac
 
-	_domopi_file_close $fd
 
 	return $ret
 }
@@ -1215,7 +1229,6 @@ function domopi_create()
 #	Attributi modificabili:
 #	- patch
 #	- maxExecutionTime
-#	- defaultstate
 #	- description
 #
 #	@author Andrea Tassotti
@@ -1280,9 +1293,6 @@ function domopi_modify()
 			;;
 		max[eE]xecution[tT]ime)
 			_domopi_update_row "$DOMOPI_GLOBAL_CONF" "maxExecutionTime:$2" "$COLUMN_TO_MATCH"
-			;;
-		defaultstate)
-			_domopi_update_row "$DOMOPI_GLOBAL_CONF" "defaultstate:$2" "$COLUMN_TO_MATCH"
 			;;
 		description)
 			_domopi_update_row "$DOMOPI_GLOBAL_CONF" "descriptionU:$2" "$COLUMN_TO_MATCH"

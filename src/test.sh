@@ -26,11 +26,11 @@ function clock_start()
 
 function clock_stop()
 {
-	( kill $CLOCK_PID ) >/dev/null 2>&1
+	( kill $CLOCK_PID ) >/dev/null 2>&1 
 }
 
 
-trap cleanup EXIT
+trap cleanup 1 2 3 15 EXIT
 
 IDOWIRED="ID"
 IDOWIRED_NEXT="WIREDPI"
@@ -42,9 +42,9 @@ DOMOPI_PRE_TRANSITION_CALLBACK=test_callback
 #
 function cleanup()
 {
-	clock_stop
+	clock_stop >/dev/null 2>&1
 	clear
-	return 0;
+	exit 0;
 }
 
 # Callback per esecuzione attuazione nuova configurazione di stato
@@ -267,8 +267,8 @@ function header()
 	tput sc
 	tput cup 0 $(($(tput cols)-11))
 	echo -e "$CLOCK_COLOR`date +%r`$COLOR_RESET"
+	domopi_ident
 	echo "--------------------------------------------------------------------------------"
-	clock_start
 }
 
 
@@ -429,8 +429,7 @@ function modify_page()
 	header
 	echo '[1] - Cambia Patch'
 	echo '[2] - Cambia Tempo massimo di esecuzione'
-	echo '[3] - Cambia Stato iniziale'
-	echo '[4] - Cambia descrizione'
+	echo '[3] - Cambia descrizione'
 	echo '[q] - Indietro'
 }
 
@@ -487,31 +486,8 @@ function modify_page_2()
 	done
 }
 
+
 function modify_page_3()
-{
-	DONE="false"
-	while [ $DONE != "true" ]
-	do
-		echo -n "$IDOWIRED del sensore (scrivere 'end' per terminare): "
-		read ID
-		[ -z "$ID" ] && continue
-		[[ "$ID" = "end" ]] && break;
-
-		echo -n "DefaultState (Lasciare vuoto per annullare modifiche): "
-		read STATE
-		[ -z "$STATE" ] && break;
-
-		domopi_timer_start modify
-		if [ $IDOWIRED = "ID" ]; then
-			domopi_modify -s $ID defaultstate $STATE
-		else
-			domopi_modify -w $ID defaultstate $STATE
-		fi
-		domopi_time_elapsed modify
-	done
-}
-
-function modify_page_4()
 {
 	DONE="false"
 	while [ $DONE != "true" ]
@@ -547,11 +523,11 @@ function modify_page_4()
 # MAIN PROGRAM ----------------------------------------
 #
 
+clock_start
 SHUTDOWN=false
 CURRENT_PAGE=master_page
 while ! $SHUTDOWN
 do
-	clock_stop
 	${CURRENT_PAGE}
 	echo
 	echo -ne "Seleziona una funzione: "
