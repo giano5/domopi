@@ -108,6 +108,7 @@ function select_tipo()
 		echo "  4 - ALARM"
 		echo "  5 - OTHER"
 		echo "  6 - PULSE"
+		echo "  7 - VSWITCH (solo se non generato automaticamente)"
 		echo -n "Scegli: "
 		read
 		case "$REPLY" in
@@ -117,6 +118,7 @@ function select_tipo()
 		4) TIPO="ALARM"	;;
 		5) TIPO="OTHER"	;;
 		6) TIPO="PULSE"	;;
+		7) TIPO="VSWITCH"	;;
 		*)
 			;;
 		esac
@@ -135,6 +137,8 @@ function select_tipo()
 #
 function create()
 {
+	local EXTRA_OPTIONS
+
 	echo
 	echo "Creazione sensore:"
 
@@ -153,8 +157,18 @@ function create()
 		echo -n "WiredPI number (lascare vuoto per automatico): "
 		read WIRED
 
+		echo -n "Creo automaticamente sensori virtuali ? (S[i]/Y[es], N[o] o vuoto): "
+		read AUTO
+		case "$AUTO" in
+			[sS]*)	EXTRA_OPTIONS="$EXTRA_OPTIONS -a" ;;	
+			[yY]*)	EXTRA_OPTIONS="$EXTRA_OPTIONS -a" ;;
+			[nN]*)	;;
+			*)	;;
+		esac
+
+
 		domopi_timer_start create
-		domopi_create -t "$TIPO" -p "$PATCH" -w "$WIRED" sensor "$DESC"
+		domopi_create -t "$TIPO" -p "$PATCH" -w "$WIRED" $EXTRA_OPTIONS sensor "$DESC"
 		domopi_time_elapsed create
 	done
 }
@@ -360,6 +374,7 @@ function master_page_8()
 		read ID
 		[ -z "$ID" ] && continue
 		[[ "$ID" = "end" ]] && break;
+		echo
 		domopi_destroy -n sensor $ID
 	done
 }

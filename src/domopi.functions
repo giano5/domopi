@@ -1105,6 +1105,7 @@ function domopi_create()
 	local WIREDPI
 	local TYPE=group
 	local MODULES_CONF_FILE
+	local AUTO_CREATE_VIRTUAL=false
 
 	MODULES_CONF_FILE="$DOMOPI_EXTENDED_CONF_PATH/${DOMOPI_MODULES_CONF%%.$DOMOPI_CONF_EXTENTION}-$DOMOPI_IDENT_UUID.$DOMOPI_CONF_EXTENTION" 
 
@@ -1116,13 +1117,14 @@ echo $MODULES_CONF_FILE
 
 	# Processa opzioni locali
 	local OPTIND=1 OPTARG opt
-	while getopts ":p:t:vw:" opt; do
+	while getopts ":ap:t:vw:" opt; do
 		case $opt in
 		p)	PATCHNUMBER=$OPTARG ;;
 		g)	GROUPID=$OPTARG ;;	# solo per sensori
 		t)	TYPE=$OPTARG ;;
 		v)	VERBOSE=true ;;
 		w)	WIREDPI=$OPTARG ;;
+		a)	AUTO_CREATE_VIRTUAL=true ;;
 		:)	echo argument required ; return ;;
 		esac
 	done
@@ -1136,7 +1138,7 @@ echo $MODULES_CONF_FILE
 	"NOLIGHT")
 		[ -n "$PATCHNUMBER" ] && PATCH="patchout:$PATCHNUMBER" 
 		;;
-	"SWITCH")
+	"SWITCH"|"VSWITCH")
 		[ -n "$PATCHNUMBER" ] && PATCH="patchin:$PATCHNUMBER" 
 		;;
 	"ALARM")
@@ -1170,9 +1172,10 @@ echo $MODULES_CONF_FILE
 			_domopi_select_row -q "$MODULES_CONF_FILE" device defaultstate wiredpi type=$TYPE used=false >/dev/null
 			# Legge solo la prima risposta
 			read device REST <<< "${DOMOPI_device[@]}"
+## TODO: un virtual switch non ha un default state se ci basiamo su wiredpi
 			read DEFAULTSTATE REST <<< "${DOMOPI_defaultstate[@]}"
 			read WIREDPI REST <<< "${DOMOPI_wiredpi[@]}"
-			if [ -z "$WIREDPI" ]
+			if [ -z "$WIREDPI" ] && [ "$TYPE" != "VSWITCH" ]
 			then
 				echo "ERROR: no more wiredpi available" >&2
 				_domopi_file_close $fd
@@ -1188,7 +1191,14 @@ echo $MODULES_CONF_FILE
 		fd=$?	# Non usato direttamente
 		[ $fd -eq 255 ] && return 1
 
-		_domopi_insert_row "$DOMOPI_GLOBAL_CONF" sensorID:'*' "descriptionU:$2" currentstate:"$DEFAULTSTATE" wiredpi:"$WIREDPI" type:"$TYPE" "$PATCH" 
+		_domopi_insert_row "$DOMOPI_GLOBAL_CONF" device:"$device" sensorID:'*' "descriptionU:$2" currentstate:"$DEFAULTSTATE" wiredpi:"$WIREDPI" type:"$TYPE" "$PATCH" 
+
+		# NOTA: Il vincolo di univocità sulle descrizioni impone
+		#		di alterare il nome originale.
+		#	TODO: Per il momento applichiamo suffisso VIRT
+		#
+		$AUTO_CREATE_VIRTUAL && [ "$TYPE" = "SWITCH" ] &&
+		_domopi_insert_row "$DOMOPI_GLOBAL_CONF" sensorID:'*' "descriptionU:${2}VIRT" currentstate:"$DEFAULTSTATE" type:"VSWITCH" "$PATCH" 
 		ret=$?
 
 		_domopi_file_close $fd
@@ -1392,10 +1402,15 @@ function domopi_destroy()
 	local VERBOSE=false
 	local NUMERIC=false
 	# Il file di configurazione deve esistere inizializzato
-	# Read schema
-	_domopi_file_open "$DOMOPI_GLOBAL_CONF"
-	fd=$?	# Non usato direttamente
-	[ $fd -eq 255 ] && return 1
+
+	MODULES_CONF_FILE="$DOMOPI_EXTENDED_CONF_PATH/${DOMOPI_MODULES_CONF%%.$DOMOPI_CONF_EXTENTION}-$DOMOPI_IDENT_UUID.$DOMOPI_CONF_EXTENTION" 
+
+	if [ ! -f "$MODULES_CONF_FILE" ]; then
+echo $MODULES_CONF_FILE
+		echo "ERROR: hardware running configuration missing." >&2
+		return 2
+	fi
+
 
 	# rocessa opzioni locali
 	local OPTIND=1 OPTARG opt
@@ -1409,13 +1424,37 @@ function domopi_destroy()
 	shift $((OPTIND-1))
 	case "$1" in
 	sensor)
+		# Read schema conf
+		_domopi_file_open "$DOMOPI_GLOBAL_CONF"
+		fd=$?	# Non usato direttamente
+		[ $fd -eq 255 ] && return 1
+
 		if $NUMERIC ; then
+			_domopi_select_row -q $DOMOPI_GLOBAL_CONF device wiredpi sensorID="$2" >/dev/null
 			_domopi_delete_row $DOMOPI_GLOBAL_CONF sensorID="$2"
 			ret=$?
 		else
+			_domopi_select_row -q $DOMOPI_GLOBAL_CONF device wiredpi descriptionU="$2" >/dev/null
 			_domopi_delete_row $DOMOPI_GLOBAL_CONF descriptionU="$2"
 			ret=$?
 		fi
+		_domopi_file_close $fd
+
+		# Read schema modules
+		_domopi_file_open $MODULES_CONF_FILE
+		fd=$?	# Non usato direttamente
+		[ $fd -eq 255 ] && return 1
+
+		local device
+		local wirepi
+
+		read device REST <<< ${DOMOPI_device[@]}
+		read wiredpi REST <<< ${DOMOPI_wiredpi[@]}
+
+		_domopi_update_row $MODULES_CONF_FILE used:false device="$device" wiredpi="$wiredpi"
+
+		_domopi_file_close $fd
+
 		if [ $ret -eq 0 ]; then
 			echo "Oggetto cancellato correttamente"
 		else
@@ -1423,6 +1462,10 @@ function domopi_destroy()
 		fi
 		;;
 	group)
+		# Read schema
+		_domopi_file_open "$DOMOPI_GLOBAL_CONF"
+		fd=$?	# Non usato direttamente
+		[ $fd -eq 255 ] && return 1
 		# Determinare ID del gruppo se fornito descrittore
 		# Cercare sensori appartenenti al gruppo
 		 _domopi_select_row $DOMOPI_GLOBAL_CONF sensorID "groups=[0-9\ ]*$GROUPID[0-9\ ]*" 
@@ -1439,6 +1482,7 @@ function domopi_destroy()
 		else
 			echo "Nessun oggetto cancellabile"
 		fi
+		_domopi_file_close $fd
 		;;
 	*)
 		echo FATAL: not implemented >&2
