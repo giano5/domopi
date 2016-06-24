@@ -74,7 +74,7 @@ DOMOPI_FILE_SCHEMA['global']='# groupID:device:sensorID:patchin:patchout:wiredpi
 #declare -A DOMOPI_SCHEMA_COL_global
 
 # Physical configuration
-DOMOPI_FILE_SCHEMA['modules']='# device:modulename:defaultstate:wiredpi:type:used'
+DOMOPI_FILE_SCHEMA['modules']='# modulename:defaultstate:wiredpi:type:used'
 # NOTA: In caso di bash < 4.2 dichiarare a questo livello
 #declare -A DOMOPI_SCHEMA_COL_modules
 
@@ -1082,10 +1082,10 @@ function domopi_install
 #	Scrive nel file determinato dalla variabile
 #	ambientale DOMOPI_GLOBAL_CONF creato con domopi_init
 #
-#	$1 - 'sensor', 'module' or 'group'
+#	$1 - 'sensor', 'group'
 #	$2 - name
 #
-#	-m moduleid TODO
+#	-d device UUID
 #	-g groupid TODO
 #	-p <patchNumber>
 #	-t <type>	TODO: letto dal file di struttura
@@ -1106,29 +1106,32 @@ function domopi_create()
 	local TYPE=group
 	local MODULES_CONF_FILE
 	local AUTO_CREATE_VIRTUAL=false
+	local UUID=$DOMOPI_IDENT_UUID	# local device
 
-	MODULES_CONF_FILE="$DOMOPI_EXTENDED_CONF_PATH/${DOMOPI_MODULES_CONF%%.$DOMOPI_CONF_EXTENTION}-$DOMOPI_IDENT_UUID.$DOMOPI_CONF_EXTENTION" 
-
-	if [ ! -f "$MODULES_CONF_FILE" ]; then
-echo $MODULES_CONF_FILE
-		echo "ERROR: hardware running configuration missing." >&2
-		return 2
-	fi
 
 	# Processa opzioni locali
 	local OPTIND=1 OPTARG opt
-	while getopts ":ap:t:vw:" opt; do
+	while getopts ":ad:p:t:vw:" opt; do
 		case $opt in
-		p)	PATCHNUMBER=$OPTARG ;;
+		a)	AUTO_CREATE_VIRTUAL=true ;;
+		d)	UUID=$OPTARG ;;	# remote device
 		g)	GROUPID=$OPTARG ;;	# solo per sensori
+		p)	PATCHNUMBER=$OPTARG ;;
 		t)	TYPE=$OPTARG ;;
 		v)	VERBOSE=true ;;
 		w)	WIREDPI=$OPTARG ;;
-		a)	AUTO_CREATE_VIRTUAL=true ;;
 		:)	echo argument required ; return ;;
 		esac
 	done
 	shift $((OPTIND-1))
+
+	MODULES_CONF_FILE="$DOMOPI_EXTENDED_CONF_PATH/${DOMOPI_MODULES_CONF%%.$DOMOPI_CONF_EXTENTION}-${UUID}.$DOMOPI_CONF_EXTENTION" 
+
+	if [ ! -f "$MODULES_CONF_FILE" ]; then
+		echo "ERROR: hardware running configuration missing." >&2
+		return 2
+	fi
+	echo "NOTICE: selected $MODULES_CONF_FILE" >&2
 
 	PATCH=""
 	case "$TYPE" in
@@ -1169,19 +1172,19 @@ echo $MODULES_CONF_FILE
 			[ $fd -eq 255 ] && return 1
 			#$DOMOPI_SCHEMA_NAME
 
-			_domopi_select_row -q "$MODULES_CONF_FILE" device defaultstate wiredpi type=$TYPE used=false >/dev/null
+			_domopi_select_row -q "$MODULES_CONF_FILE" defaultstate wiredpi type=$TYPE used=false >/dev/null
 			# Legge solo la prima risposta
-			read device REST <<< "${DOMOPI_device[@]}"
 ## TODO: un virtual switch non ha un default state se ci basiamo su wiredpi
 			read DEFAULTSTATE REST <<< "${DOMOPI_defaultstate[@]}"
 			read WIREDPI REST <<< "${DOMOPI_wiredpi[@]}"
 			if [ -z "$WIREDPI" ] && [ "$TYPE" != "VSWITCH" ]
 			then
-				echo "ERROR: no more wiredpi available" >&2
+				echo "ERROR: no more wiredpi available on device $UUID" >&2
 				_domopi_file_close $fd
 				return 1
 			fi
-			_domopi_update_row "$MODULES_CONF_FILE" used:true device=$device wiredpi=$WIREDPI
+
+			_domopi_update_row "$MODULES_CONF_FILE" used:true wiredpi=$WIREDPI
 
 			_domopi_file_close $fd
 		fi
@@ -1191,14 +1194,17 @@ echo $MODULES_CONF_FILE
 		fd=$?	# Non usato direttamente
 		[ $fd -eq 255 ] && return 1
 
-		_domopi_insert_row "$DOMOPI_GLOBAL_CONF" device:"$device" sensorID:'*' "descriptionU:$2" currentstate:"$DEFAULTSTATE" wiredpi:"$WIREDPI" type:"$TYPE" "$PATCH" 
+		# TODO: device potrà essere un ID sequenziale in presenza
+		#		di master.cfg che definisca il legame con UUID
+		echo "NOTICE: master.cfg ignored: device use UUID" >&2
+		_domopi_insert_row "$DOMOPI_GLOBAL_CONF" device:"$UUID" sensorID:'*' "descriptionU:$2" currentstate:"$DEFAULTSTATE" wiredpi:"$WIREDPI" type:"$TYPE" "$PATCH" 
 
 		# NOTA: Il vincolo di univocità sulle descrizioni impone
 		#		di alterare il nome originale.
 		#	TODO: Per il momento applichiamo suffisso VIRT
 		#
 		$AUTO_CREATE_VIRTUAL && [ "$TYPE" = "SWITCH" ] &&
-		_domopi_insert_row "$DOMOPI_GLOBAL_CONF" sensorID:'*' "descriptionU:${2}VIRT" currentstate:"$DEFAULTSTATE" type:"VSWITCH" "$PATCH" 
+		_domopi_insert_row "$DOMOPI_GLOBAL_CONF" device:"$UUID" sensorID:'*' "descriptionU:${2}VIRT" currentstate:"$DEFAULTSTATE" type:"VSWITCH" "$PATCH" 
 		ret=$?
 
 		_domopi_file_close $fd
@@ -1228,6 +1234,7 @@ echo $MODULES_CONF_FILE
 ##
 #	Modifica attributi secondari per un sensore/gruppo
 #
+#	-d<UUID> Device
 #	-g<ID>	Seleziona gruppo da modificare
 #	-s<ID>	Selettore da modificare
 #	-w<ID>	WiredPI da modificare
@@ -1248,7 +1255,9 @@ function domopi_modify()
 {
 	local COLUMN_TO_MATCH=descriptionU
 	local GROUP=false
+	local UUID=$DOMOPI_IDENT_UUID	# local device
 	local ret=1
+
 	# Il file di configurazione deve esistere inizializzato
 	# Read schema
 	_domopi_file_open "$DOMOPI_GLOBAL_CONF"
@@ -1257,8 +1266,9 @@ function domopi_modify()
 
 	# Processa opzioni locali
 	local OPTIND=1 OPTARG opt
-	while getopts ":g:s:w:" opt; do
+	while getopts ":d:g:s:w:" opt; do
 		case $opt in
+		d)	UUID=$OPTARG ;;	# remote device
 		g)	COLUMN_TO_MATCH="groups=[0-9\ ]*$OPTARG[0-9\ ]*";;
 		s)	COLUMN_TO_MATCH="sensorID=$OPTARG";;
 		w)	COLUMN_TO_MATCH="wiredpi=$OPTARG";;
@@ -1267,7 +1277,8 @@ function domopi_modify()
 	done
 	shift $((OPTIND-1))
 
-	_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" descriptionU sensorID wiredpi type "$COLUMN_TO_MATCH" >/dev/null
+
+	_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" descriptionU sensorID wiredpi type "$COLUMN_TO_MATCH" device="$UUID" >/dev/null
 
 	for row in ${!DOMOPI_type[@]}
 	do
@@ -1296,16 +1307,20 @@ function domopi_modify()
 			;;
 		esac
 	
+		# TODO: device potrà essere un ID sequenziale in presenza
+		#		di master.cfg che definisca il legame con UUID
+		echo "NOTICE: master.cfg ignored: device use UUID" >&2
 
 		case "$1" in
 		patch)
-			_domopi_update_row "$DOMOPI_GLOBAL_CONF" "$PATCH" "$COLUMN_TO_MATCH"
+			_domopi_update_row "$DOMOPI_GLOBAL_CONF" "$PATCH" "$COLUMN_TO_MATCH" device="$UUID"
 			;;
 		max[eE]xecution[tT]ime)
-			_domopi_update_row "$DOMOPI_GLOBAL_CONF" "maxExecutionTime:$2" "$COLUMN_TO_MATCH"
+			echo _domopi_update_row "$DOMOPI_GLOBAL_CONF" "maxExecutionTime:$2" "$COLUMN_TO_MATCH" device="$UUID"
+			_domopi_update_row "$DOMOPI_GLOBAL_CONF" "maxExecutionTime:$2" "$COLUMN_TO_MATCH" device="$UUID"
 			;;
 		description)
-			_domopi_update_row "$DOMOPI_GLOBAL_CONF" "descriptionU:$2" "$COLUMN_TO_MATCH"
+			_domopi_update_row "$DOMOPI_GLOBAL_CONF" "descriptionU:$2" "$COLUMN_TO_MATCH" device="$UUID"
 			;;
 		esac
 	done
@@ -1318,6 +1333,7 @@ function domopi_modify()
 ##
 #	Identifica il patch number per un sensore o gruppo
 #
+#	-d device UUID
 #	-g<ID>	Seleziona gruppo da modificare
 #	-s<ID>	Selettore da modificare
 #	-w<ID>	WiredPI da modificare
@@ -1329,6 +1345,7 @@ public domopi_get_patch
 function domopi_get_patch()
 {
 	local COLUMN_TO_MATCH=descriptionU
+	local UUID=$DOMOPI_IDENT_UUID	# local device
 	local ret=1
 	# Il file di configurazione deve esistere inizializzato
 	# Read schema
@@ -1338,8 +1355,9 @@ function domopi_get_patch()
 
 	# Processa opzioni locali
 	local OPTIND=1 OPTARG opt
-	while getopts ":g:s:w:" opt; do
+	while getopts ":d:g:s:w:" opt; do
 		case $opt in
+		d)	UUID=$OPTARG ;;	# remote device
 		g)	COLUMN_TO_MATCH="groups=[0-9\ ]*$OPTARG[0-9\ ]*";;
 		s)	COLUMN_TO_MATCH="sensorID=$OPTARG";;
 		w)	COLUMN_TO_MATCH="wiredpi=$OPTARG";;
@@ -1348,7 +1366,7 @@ function domopi_get_patch()
 	done
 	shift $((OPTIND-1))
 
-	_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" type patchin patchout "$COLUMN_TO_MATCH" >/dev/null
+	_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" type patchin patchout "$COLUMN_TO_MATCH" device="$UUID" >/dev/null
 
 	for row in ${!DOMOPI_type[@]}
 	do
@@ -1393,6 +1411,7 @@ function domopi_get_patch()
 #	$1 - Tipo oggetto
 #	$2 - Criterio di ricerca
 #	-n - Criterio di ricerca numerico
+#	-d<UUID> Device
 #
 #	@author Andrea Tassotti
 #
@@ -1401,27 +1420,29 @@ function domopi_destroy()
 {
 	local VERBOSE=false
 	local NUMERIC=false
+	local UUID=$DOMOPI_IDENT_UUID	# local device
 	# Il file di configurazione deve esistere inizializzato
-
-	MODULES_CONF_FILE="$DOMOPI_EXTENDED_CONF_PATH/${DOMOPI_MODULES_CONF%%.$DOMOPI_CONF_EXTENTION}-$DOMOPI_IDENT_UUID.$DOMOPI_CONF_EXTENTION" 
-
-	if [ ! -f "$MODULES_CONF_FILE" ]; then
-echo $MODULES_CONF_FILE
-		echo "ERROR: hardware running configuration missing." >&2
-		return 2
-	fi
-
 
 	# rocessa opzioni locali
 	local OPTIND=1 OPTARG opt
-	while getopts ":vn" opt; do
+	while getopts ":d:vn" opt; do
 		case $opt in
+		d)	UUID=$OPTARG ;;	# remote device
 		v)	VERBOSE=true ;;
 		n)	NUMERIC=true ;;
 		:)	echo argument required ; return ;;
 		esac
 	done
 	shift $((OPTIND-1))
+
+	MODULES_CONF_FILE="$DOMOPI_EXTENDED_CONF_PATH/${DOMOPI_MODULES_CONF%%.$DOMOPI_CONF_EXTENTION}-${UUID}.$DOMOPI_CONF_EXTENTION" 
+	if [ ! -f "$MODULES_CONF_FILE" ]; then
+echo $MODULES_CONF_FILE
+		echo "ERROR: hardware running configuration missing." >&2
+		return 2
+	fi
+	echo "NOTICE: selected $MODULES_CONF_FILE" >&2
+
 	case "$1" in
 	sensor)
 		# Read schema conf
@@ -1429,13 +1450,17 @@ echo $MODULES_CONF_FILE
 		fd=$?	# Non usato direttamente
 		[ $fd -eq 255 ] && return 1
 
+		# TODO: device potrà essere un ID sequenziale in presenza
+		#		di master.cfg che definisca il legame con UUID
+		echo "NOTICE: master.cfg ignored: device use UUID" >&2
+
 		if $NUMERIC ; then
-			_domopi_select_row -q $DOMOPI_GLOBAL_CONF device wiredpi sensorID="$2" >/dev/null
-			_domopi_delete_row $DOMOPI_GLOBAL_CONF sensorID="$2"
+			_domopi_select_row -q $DOMOPI_GLOBAL_CONF wiredpi device="$UUID" sensorID="$2" >/dev/null
+			_domopi_delete_row $DOMOPI_GLOBAL_CONF device="$UUID" sensorID="$2"
 			ret=$?
 		else
-			_domopi_select_row -q $DOMOPI_GLOBAL_CONF device wiredpi descriptionU="$2" >/dev/null
-			_domopi_delete_row $DOMOPI_GLOBAL_CONF descriptionU="$2"
+			_domopi_select_row -q $DOMOPI_GLOBAL_CONF wiredpi device="$UUID" descriptionU="$2" >/dev/null
+			_domopi_delete_row $DOMOPI_GLOBAL_CONF device="$UUID" descriptionU="$2"
 			ret=$?
 		fi
 		_domopi_file_close $fd
@@ -1445,13 +1470,11 @@ echo $MODULES_CONF_FILE
 		fd=$?	# Non usato direttamente
 		[ $fd -eq 255 ] && return 1
 
-		local device
 		local wirepi
 
-		read device REST <<< ${DOMOPI_device[@]}
 		read wiredpi REST <<< ${DOMOPI_wiredpi[@]}
 
-		_domopi_update_row $MODULES_CONF_FILE used:false device="$device" wiredpi="$wiredpi"
+		_domopi_update_row $MODULES_CONF_FILE used:false wiredpi="$wiredpi"
 
 		_domopi_file_close $fd
 
@@ -1503,6 +1526,9 @@ echo $MODULES_CONF_FILE
 #	$2 - value to match
 #	$3 - New state
 #
+#	La transizionepuò avvenire senza restrizioni di device
+#
+#
 #	Utilizza DOMOPI_PRE_TRANSITION_CALLBACK per eseguire un codice
 #	prima di salvare la configurazione di stato: fornire nome di una
 #	funzione definita
@@ -1511,16 +1537,21 @@ echo $MODULES_CONF_FILE
 #	funzione definita
 #	In entrambi i casi viene passato il valore del nuovo stato; sono
 #	disponibili le colonne della configurazione sensorID e wiredpi con:
+#	${DOMOPI_device[@]}		# Consente la trasmissione puntuale
 #	${DOMOPI_sensorID[@]}
 #	${DOMOPI_wiredpi[@]}
+#	
 #
-# TODO: Supportare gruppi e moduli
+# TODO: Supportare gruppi 
 #
 #	@author Andrea Tassotti
 #
 function _domopi_do_transition_by()
 {
-	_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" currentstate patchin $1=$2 >/dev/null
+	local UUID=$DOMOPI_IDENT_UUID	# local device
+	_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" device currentstate patchin $1=$2 >/dev/null
+	read device REST <<< ${DOMOPI_device[@]}
+
 
 	# No transition
 	[[ $3 = ${DOMOPI_currentstate[0]} ]] && return 1
@@ -1529,9 +1560,10 @@ function _domopi_do_transition_by()
 	[ -z "${DOMOPI_patchin[0]}" ] && return 0
 
 	# Propagation
-	_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" sensorID wiredpi patchout=${DOMOPI_patchin[0]} > /dev/null
+	_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" device sensorID wiredpi patchout=${DOMOPI_patchin[0]} > /dev/null
+	[ "$device" != "$UUID" ] && echo "NOTICE: Propagate state on different devices" >&2
 
-	${DOMOPI_PRE_TRANSITION_CALLBACK:-true} $3
+	${DOMOPI_PRE_TRANSITION_CALLBACK:-true} $3 
 
 	in=${DOMOPI_sensorID[@]}
 	in=${in/\ /\|}
@@ -1547,6 +1579,7 @@ function _domopi_do_transition_by()
 #
 #	$1 - Criterio di ricerca
 #	$2 - New state
+#	-d device UUID
 #	-g - Il criterio di ricerca si riferisce ad un gruppo
 #	-n - Usa criterio di ricerca numerico (ID) invece che espressione regolare su descrizione
 #	-w - Usa un criterio di ricerca numerico su wiredPI
@@ -1570,7 +1603,7 @@ function _domopi_do_transition_by()
 #	${DOMOPI_wiredpi[@]}
 #
 #
-#	TODO: Implementare selettore per modulo e gruppo
+#	TODO: Implementare selettore per gruppo
 #
 #	Esempio: domopi_set_state 1 on
 #
@@ -1580,6 +1613,7 @@ public domopi_set_state
 function domopi_set_state()
 {
 	local COLUMN_TO_MATCH=descriptionU
+	local UUID=$DOMOPI_IDENT_UUID	# local device
 	local GROUP=false
 	local ret=1
 	# Il file di configurazione deve esistere inizializzato
@@ -1592,6 +1626,7 @@ function domopi_set_state()
 	local OPTIND=1 OPTARG opt
 	while getopts ":gnw" opt; do
 		case $opt in
+		d)	UUID=$OPTARG ;;	# remote device
 		g)	GROUP=true ;;
 		n)	COLUMN_TO_MATCH=sensorID ;;
 		w)	COLUMN_TO_MATCH=wiredpi ;;
@@ -1611,7 +1646,7 @@ function domopi_set_state()
 # sensore
 		_domopi_do_transition_by $COLUMN_TO_MATCH "$1" "$2"
 		ret=$?
-		[ $ret -eq 0 ] && _domopi_update_row "$DOMOPI_GLOBAL_CONF" currentstate:$2 $COLUMN_TO_MATCH="$1"
+		[ $ret -eq 0 ] && _domopi_update_row "$DOMOPI_GLOBAL_CONF" currentstate:$2 $COLUMN_TO_MATCH="$1" device="$UUID"
 	fi
 
 	_domopi_file_close $fd
@@ -1624,6 +1659,7 @@ function domopi_set_state()
 #	Legge stato di un sensore o gruppo
 #
 #	$1 - Criterio di ricerca
+#	-d device UUID
 #	-g - Il criterio di ricerca si riferisce ad un gruppo
 #	-n - Usa criterio di ricerca numerico (ID) invece che espressione regolare su descrizione
 #	-w - Usa un criterio di ricerca numerico su wiredPI
@@ -1645,6 +1681,7 @@ public domopi_get_state
 function domopi_get_state()
 {
 	local COLUMN_TO_MATCH=descriptionU
+	local UUID=$DOMOPI_IDENT_UUID	# local device
 	local GROUP=false
 	# Il file di configurazione deve esistere inizializzato
 	# Read schema
@@ -1656,6 +1693,7 @@ function domopi_get_state()
 	local OPTIND=1 OPTARG opt
 	while getopts ":gnw" opt; do
 		case $opt in
+		d)	UUID=$OPTARG ;;	# remote device
 		g)	GROUP=true ;;
 		n)	COLUMN_TO_MATCH=sensorID ;;
 		w)	COLUMN_TO_MATCH=wiredpi ;;
@@ -1669,7 +1707,7 @@ function domopi_get_state()
 	#		_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" currentstate groupID=$1
 	#		_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" currentstate sensorID=x descriptionU="$1"
 	else
-			_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" currentstate $COLUMN_TO_MATCH="$1"
+			_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" currentstate $COLUMN_TO_MATCH="$1" device="$UUID"
 	fi
 
 	_domopi_file_close $fd
@@ -1681,6 +1719,7 @@ function domopi_get_state()
 #	Legge il tipo di un sensore
 #
 #	$1 - Criterio di ricerca
+#	-d device UUID
 #	-n - Usa criterio di ricerca numerico (ID) invece che espressione regolare su descrizione
 #	-w - Usa un criterio di ricerca numerico su wiredPI
 #
@@ -1698,6 +1737,7 @@ public domopi_get_type
 function domopi_get_type()
 {
 	local COLUMN_TO_MATCH=descriptionU
+	local UUID=$DOMOPI_IDENT_UUID	# local device
 	# Il file di configurazione deve esistere inizializzato
 	# Read schema
 	_domopi_file_open "$DOMOPI_GLOBAL_CONF"
@@ -1708,6 +1748,7 @@ function domopi_get_type()
 	local OPTIND=1 OPTARG opt
 	while getopts ":gnw" opt; do
 		case $opt in
+		d)	UUID=$OPTARG ;;	# remote device
 		n)	COLUMN_TO_MATCH=sensorID ;;
 		w)	COLUMN_TO_MATCH=wiredpi ;;
 		:)	echo argument required ; return ;;
@@ -1715,7 +1756,7 @@ function domopi_get_type()
 	done
 	shift $((OPTIND-1))
 
-	_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" type $COLUMN_TO_MATCH="$1"
+	_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" type $COLUMN_TO_MATCH="$1" device="$UUID"
 
 	_domopi_file_close $fd
 	return 0
@@ -1723,9 +1764,54 @@ function domopi_get_type()
 
 
 ##
+#	Legge la descrizione un sensore
+#
+#	-d device UUID
+#	-s<ID> - Ricerca per sendorID
+#	-w<ID> - Ricerca per wiredPI
+#
+#	Restituisce la descrizione in STDOUT 
+#	Distribuito anche come ${DOMOPI_descriptionU[0]}
+#
+#
+#	Esempio: domopi_get_description -n 1 
+#
+#	@author Andrea Tassotti
+#
+public domopi_get_description
+function domopi_get_description()
+{
+	local COLUMN_TO_MATCH=descriptionU
+	local UUID=$DOMOPI_IDENT_UUID	# local device
+	# Il file di configurazione deve esistere inizializzato
+	# Read schema
+	_domopi_file_open "$DOMOPI_GLOBAL_CONF"
+	fd=$?	# Non usato direttamente
+	[ $fd -eq 255 ] && return 1
+
+	# Processa opzioni locali
+	local OPTIND=1 OPTARG opt
+	while getopts ":g:s:w:" opt; do
+		case $opt in
+		d)	UUID=$OPTARG ;;	# remote device
+		s)	COLUMN_TO_MATCH=sensorID; VALUE_TO_MATCH=$OPTARG ;;
+		w)	COLUMN_TO_MATCH=wiredpi ; VALUE_TO_MATCH=$OPTARG ;;
+		:)	echo argument required ; return ;;
+		esac
+	done
+	shift $((OPTIND-1))
+
+	echo _domopi_select_row -q "$DOMOPI_GLOBAL_CONF" descriptionU $COLUMN_TO_MATCH="$VALUE_TO_MATCH" device="$UUID"
+	_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" descriptionU $COLUMN_TO_MATCH="$VALUE_TO_MATCH" device="$UUID"
+
+	_domopi_file_close $fd
+	return 0
+}
+
+##
 # Lista degli oggetti di configurazioni selezionati per tipo
 #
-#	$1 - Tipo (sensor, module, group, ...)
+#	$1 - Tipo (sensor, group, ...)
 #
 #	Indica ID, descrizione e stato
 #
@@ -1740,7 +1826,7 @@ function domopi_list()
 
 	case "$1" in
 	sensor)
-		_domopi_select_row "$DOMOPI_GLOBAL_CONF" sensorID descriptionU currentstate wiredpi patchin patchout
+		_domopi_select_row "$DOMOPI_GLOBAL_CONF" device sensorID descriptionU currentstate wiredpi patchin patchout
 		;;
 	group)
 		_domopi_select_row groupID descriptionU currentstate 
@@ -1771,6 +1857,7 @@ function domopi_get_wiredpi()
 {
 	local VERBOSE=false
 	local COLUMNS_TO_MATCH=""
+	local UUID=$DOMOPI_IDENT_UUID	# local device
 	local ret
 	# Il file di configurazione deve esistere inizializzato
 	# Read schema

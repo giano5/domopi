@@ -51,15 +51,19 @@ function cleanup()
 #
 #	$1 - Nuovo stato
 #
+#	SOLO SE OPERAZIONE SU DEVICE LOCALE
+#
 function test_callback()
 {
 	echo execute callback
 	#echo sensorID ${DOMOPI_sensorID[@]}
 	#echo wiredpi ${DOMOPI_wiredpi[@]}
-	for wiredpi in ${DOMOPI_wiredpi[@]}
+
+	for index in ${!DOMOPI_wiredpi[@]}
 	do
 		# rimuovere echo per eseguire
-		echo gpio write $wiredpi $1
+		[ "$UUID" = "${DOMOPI_device[$index]}" ] && 
+			echo gpio write ${DOMOPI_wiredpi[$index]} $1
 	done
 }
 
@@ -278,9 +282,6 @@ function header()
 {
 	clear
 	echo -e "$TITLE_COLOR DOMOPI TEST PROGRAM                                                              $COLOR_RESET"
-	tput sc
-	tput cup 0 $(($(tput cols)-11))
-	echo -e "$CLOCK_COLOR`date +%r`$COLOR_RESET"
 	domopi_ident
 	echo "--------------------------------------------------------------------------------"
 }
@@ -538,7 +539,6 @@ function modify_page_3()
 # MAIN PROGRAM ----------------------------------------
 #
 
-clock_start
 SHUTDOWN=false
 CURRENT_PAGE=master_page
 while ! $SHUTDOWN
