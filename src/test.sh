@@ -281,9 +281,9 @@ function state_simulation()
 function header()
 {
 	clear
-	echo -e "$TITLE_COLOR DOMOPI TEST PROGRAM                                                              $COLOR_RESET"
+	echo -e "$TITLE_COLOR DOMOPI TEST PROGRAM                                                          $COLOR_RESET"
 	domopi_ident
-	echo "--------------------------------------------------------------------------------"
+	echo "------------------------------------------------------------------------------"
 }
 
 

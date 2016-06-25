@@ -569,7 +569,7 @@ function _domopi_select_row()
 				[ -n "${row[$index]}" ] && echo -ne ${row[$index]} || echo -ne ' '
 				! $VERBOSE && echo -ne "$DELIMITER"
 				$VERBOSE && echo
-				eval DOMOPI_$colname\[$i\]=\"\$\{row[$index]\}\"
+				[ -n "$index" ] && eval DOMOPI_$colname\[$i\]=\"\$\{row[$index]\}\"
 				c=$((c+1))
 			done
 
@@ -892,7 +892,7 @@ function domopi_help()
 	for f in $DOMOPI_PUBLIC_FUNC_LIST
 	do
 		echo -e "\t$f()"
-	done
+	done | sort
 	echo
 	echo "Use domopi_man <function_name> for details"
 }
@@ -1106,6 +1106,7 @@ function domopi_create()
 	local TYPE=group
 	local MODULES_CONF_FILE
 	local AUTO_CREATE_VIRTUAL=false
+	local IS_VIRTUAL=false
 	local UUID=$DOMOPI_IDENT_UUID	# local device
 
 
@@ -1141,8 +1142,12 @@ function domopi_create()
 	"NOLIGHT")
 		[ -n "$PATCHNUMBER" ] && PATCH="patchout:$PATCHNUMBER" 
 		;;
-	"SWITCH"|"VSWITCH")
+	"SWITCH")
 		[ -n "$PATCHNUMBER" ] && PATCH="patchin:$PATCHNUMBER" 
+		;;
+	"VSWITCH")
+		[ -n "$PATCHNUMBER" ] && PATCH="patchin:$PATCHNUMBER" 
+		IS_VIRTUAL=true
 		;;
 	"ALARM")
 		[ -n "$PATCHNUMBER" ] && PATCH="patchout:$PATCHNUMBER patchin:$PATCHNUMBER" 
@@ -1165,26 +1170,41 @@ function domopi_create()
 	case "$1" in
 	sensor)
 		# Ricerca wiredpi per tipo tra disponibili
-		if [ -z "$WIREDPI" ]; then
+
+		## TODO: un virtual switch non ha default state e wiredpi
+		if ! $IS_VIRTUAL ; then
+
 			# Read schema
 			_domopi_file_open $MODULES_CONF_FILE
 			fd=$?	# Non usato direttamente
 			[ $fd -eq 255 ] && return 1
 			#$DOMOPI_SCHEMA_NAME
 
-			_domopi_select_row -q "$MODULES_CONF_FILE" defaultstate wiredpi type=$TYPE used=false >/dev/null
-			# Legge solo la prima risposta
-## TODO: un virtual switch non ha un default state se ci basiamo su wiredpi
-			read DEFAULTSTATE REST <<< "${DOMOPI_defaultstate[@]}"
-			read WIREDPI REST <<< "${DOMOPI_wiredpi[@]}"
-			if [ -z "$WIREDPI" ] && [ "$TYPE" != "VSWITCH" ]
-			then
-				echo "ERROR: no more wiredpi available on device $UUID" >&2
-				_domopi_file_close $fd
-				return 1
-			fi
+			if [ -z "$WIREDPI" ]; then
+				_domopi_select_row -q "$MODULES_CONF_FILE" defaultstate wiredpi type=$TYPE used=false >/dev/null
+				# Legge solo la prima risposta
+				read DEFAULTSTATE REST <<< "${DOMOPI_defaultstate[@]}"
+				read WIREDPI REST <<< "${DOMOPI_wiredpi[@]}"
+				if [ -z "$WIREDPI" ] && [ "$TYPE" != "VSWITCH" ]
+				then
+					echo "ERROR: no more wiredpi available on device $UUID" >&2
+					_domopi_file_close $fd
+					return 1
+				fi
 
-			_domopi_update_row "$MODULES_CONF_FILE" used:true wiredpi=$WIREDPI
+				_domopi_update_row "$MODULES_CONF_FILE" used:true wiredpi=$WIREDPI
+			else
+				_domopi_select_row -q "$MODULES_CONF_FILE" used wiredpi="$WIREDPI" >/dev/null
+				if [[ "${DOMOPI_used[@]}" = "true" ]] 
+				then
+					echo "ERROR: wiredpi $WIREDPI is used by a sensor on device $UUID" >&2
+					_domopi_file_close $fd
+					return 1
+				fi
+				[ -z "${DOMOPI_used[@]}" ] &&
+					echo "ERROR: wiredpi $WIREDPI have no connection on device $UUID. May be not work properly" >&2
+
+			fi
 
 			_domopi_file_close $fd
 		fi
