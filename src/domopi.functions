@@ -419,6 +419,9 @@ function _domopi_desc()
 #	Restituisce in STDOUT tabella nome=valore
 #	e nel contempo imposta variabili DOMOPI_nome
 #
+#	TODO: Attenzione. Le colonne oggetto di ricerca non vengono valorizzate
+#			in uscita se non fanno parte della lista colonne. Possono
+#			essere presenti dati sporchi
 #
 #	Esempio:
 #
@@ -449,6 +452,7 @@ function _domopi_select_row()
 	shift $((OPTIND-1))
 
 	file=$1
+	[ ! -f "$file" ] && return 255
 	shift
 	declare -A where
 	declare -A columns
@@ -610,6 +614,7 @@ function _domopi_insert_row()
 	[ -z "$DOMOPI_SCHEMA_NAME" ] && return 1
 
 	file=$1
+	[ ! -f "$file" ] && return 255
 	shift
 
 	declare -A values
@@ -687,6 +692,7 @@ function _domopi_delete_row()
 	shift $((OPTIND-1))
 
 	file=$1
+	[ ! -f "$file" ] && return 255
 	shift
 	declare -A where
 
@@ -773,6 +779,7 @@ function _domopi_update_row()
 	shift $((OPTIND-1))
 
 	file=$1
+	[ ! -f "$file" ] && return 255
 	shift
 	declare -A where
 	declare -A columns
@@ -1846,10 +1853,23 @@ function domopi_list()
 
 	case "$1" in
 	sensor)
-		_domopi_select_row "$DOMOPI_GLOBAL_CONF" device sensorID descriptionU currentstate wiredpi patchin patchout
+		_domopi_select_row "$DOMOPI_GLOBAL_CONF" device sensorID descriptionU currentstate wiredpi patchin patchout "groupID=x"
 		;;
 	group)
-		_domopi_select_row groupID descriptionU currentstate 
+		(
+		echo -e "groupID\tdescriptionU\tsensors"
+		_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" groupID descriptionU sensorID=x >/dev/null
+		for index in ${!DOMOPI_groupID[@]}
+		do
+			echo -ne "${DOMOPI_groupID[$index]}\t${DOMOPI_descriptionU[$index]}\t"
+			(
+			# NOTA: Le vatiabili DOMOPI_ hanno qui altro scope
+			domopi_get_sensors_of_group ${DOMOPI_groupID[$index]} >/dev/null
+			echo ${DOMOPI_descriptionU[@]}	|tr ' ' ','
+			)
+		done 
+		)| column -t -s $'\t'
+
 		;;
 	*)
 		echo NON IMPLEMENTATO
@@ -1869,6 +1889,7 @@ function domopi_list()
 #	-s<id>	ricerca per sensorID
 #	-t<in/out>	ricerca per tipo
 #	-v	Verbose mode
+#
 #
 #	@author Andrea Tassotti
 #
@@ -1904,9 +1925,9 @@ function domopi_get_wiredpi()
 
 	
 	if $VERBOSE ; then
-		eval _domopi_select_row \"$DOMOPI_GLOBAL_CONF\" wiredpi descriptionU $COLUMNS_TO_MATCH
+		eval _domopi_select_row \"$DOMOPI_GLOBAL_CONF\" device wiredpi descriptionU $COLUMNS_TO_MATCH
 	else
-		eval _domopi_select_row -q \"$DOMOPI_GLOBAL_CONF\" wiredpi $COLUMNS_TO_MATCH
+		eval _domopi_select_row -q \"$DOMOPI_GLOBAL_CONF\" device wiredpi $COLUMNS_TO_MATCH
 	fi
 
 	_domopi_file_close $fd
@@ -1944,13 +1965,12 @@ function domopi_group_add_sensor()
 
 	[ $# -lt 2 ] && echo Argument required && return 2
 	
-# TODO: Verificare esistenza gruppo
 	_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" groupID "groupID=$1" >/dev/null
 	[ ${#DOMOPI_groupID[@]} -eq 0 ] && echo WARNING: domopi_group_add_sensor: group $1 does not exists. >&2 && return 3
 
 	_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" groups "sensorID=$2" >/dev/null
 
-	# BUG: Non usare direttamente espressione ${DOMOPI_groups[@]}i
+	# BUG: Non usare direttamente espressione ${DOMOPI_groups[@]}
 	# nei doppi apici
 	OLDGROUPS=${DOMOPI_groups[@]}
 	if ! echo $OLDGROUPS | grep -w $1 >/dev/null ; then
@@ -1960,16 +1980,33 @@ function domopi_group_add_sensor()
 	fi
 
 	_domopi_file_close $fd
-
 }
 
 
 ##
+#	I gruppi a cui appartiene un sensore
+#
+#	$1 - Sensore
+#
+#	TODO: Aumentare informazioni
+#	@author Andrea Tassotti
 #
 public domopi_get_groups
 function domopi_get_groups()
 {
-	_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" groups "sensorID=$2" >/dev/null
+	_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" groups "sensorID=$1" >/dev/null
+}
+
+
+##
+#	I sensori in un gruppo
+#
+#	$1 - sensorID
+#
+public domopi_get_sensors_of_group
+function domopi_get_sensors_of_group()
+{
+	_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" device sensorID descriptionU "groups=[0-9\ ]*$1[0-9\ ]*"
 }
 
 

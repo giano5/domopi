@@ -299,10 +299,12 @@ function master_page()
 	echo '[ 4] - Creazione gruppo'
 	echo '[ 5] - Aggiungi sensore a gruppo'
 	echo '[ 6] - Lista sensori'
-	echo '[ 7] - Simulazione stati'
-	echo '[ 8] - Rimozione sensore'
+	echo '[ 7] - Rimozione sensore'
+	echo '[ 8] - Rimuovi sensore da un gruppo'
 	echo '[ 9] - Lista wiredpi configurati'
 	echo '[10] - Lista gruppi'
+	echo '[11] - Simulazione stati'
+	echo '[12] - Run'
 	echo '[ q] - Quit'
 }
 
@@ -347,12 +349,13 @@ function master_page_5()
 	read GROUPID
 	[[ "$GROUPID" = "end" ]] && return;
 
-		echo -n "ID del sensore (scrivere 'end' per terminare): "
-		read SENSORID
-		[[ "$SENSORID" = "end" ]] && break;
+	echo -n "ID del sensore (scrivere 'end' per terminare): "
+	read SENSORID
+	[[ "$SENSORID" = "end" ]] && break;
 
+	domopi_timer_start group_add_sensor
 	domopi_group_add_sensor $GROUPID $SENSORID
-	domopi_notice "NON ANCORA IMPLEMENTATO"
+	domopi_time_elapsed group_add_sensor
 }
 
 function master_page_6()
@@ -360,12 +363,8 @@ function master_page_6()
 	list
 }
 
-function master_page_7()
-{
-	state_simulation 
-}
 
-function master_page_8()
+function master_page_7()
 {
 
 	DONE="false"
@@ -380,14 +379,38 @@ function master_page_8()
 	done
 }
 
+function master_page_8()
+{
+	domopi_notice NON IMPLEMENTATO
+}
+
 function master_page_9()
 {
-# TODO: Scegliere opzioni di selezioe per device (-d) o persensore (-s) o per tipo (-t)
+# TODO: Scegliere opzioni di selezione per device (-d) o persensore (-s) o per tipo (-t)
 	echo "Tutti i wired configurati:"
 	domopi_get_wiredpi
 	domopi_notice
 }
 
+function master_page_10()
+{
+	echo "Lista gruppi"
+	domopi_list group | more
+	domopi_notice
+	return 0
+}
+
+function master_page_11()
+{
+	state_simulation 
+}
+
+function master_page_12()
+{
+	echo Si pone in ascolto tutti gli input per attuare gli stati
+	echo "Running ..."
+	domopi_notice	NON IMPLEMENTATO
+}
 
 function init_page()
 {
