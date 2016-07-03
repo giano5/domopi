@@ -112,7 +112,8 @@ function select_tipo()
 		echo "  4 - ALARM"
 		echo "  5 - OTHER"
 		echo "  6 - PULSE"
-		echo "  7 - VSWITCH (solo se non generato automaticamente)"
+		echo "  7 - Virtual SWITCH"
+		echo "  8 - Group SWITCH"
 		echo -n "Scegli: "
 		read
 		case "$REPLY" in
@@ -123,6 +124,7 @@ function select_tipo()
 		5) TIPO="OTHER"	;;
 		6) TIPO="PULSE"	;;
 		7) TIPO="VSWITCH"	;;
+		8) TIPO="GSWITCH"	;;
 		*)
 			;;
 		esac
@@ -155,24 +157,23 @@ function create()
 
 		select_tipo
 
-		echo -n "Patch number (lascare vuoto se non usato): "
+		if [ $TIPO != "GSWITCH" ]; then
+		echo -n "Patch number (lasciare vuoto se non usato): "
 		read PATCH
+		fi
 	
+		if [ $TIPO != "GSWITCH" ] && [ $TIPO != "VSWITCH" ]; then
 		echo -n "WiredPI number (lascare vuoto per automatico): "
 		read WIRED
+		fi
 
-		echo -n "Creo automaticamente sensori virtuali ? (S[i]/Y[es], N[o] o vuoto): "
-		read AUTO
-		case "$AUTO" in
-			[sS]*)	EXTRA_OPTIONS="$EXTRA_OPTIONS -a" ;;	
-			[yY]*)	EXTRA_OPTIONS="$EXTRA_OPTIONS -a" ;;
-			[nN]*)	;;
-			*)	;;
-		esac
-
+		if [ $TIPO = "GSWITCH" ]; then
+		echo -n "Si sta creando uno switch di gruppo; indicare id di gruppo: "
+		read GROUPID
+		fi
 
 		domopi_timer_start create
-		domopi_create -t "$TIPO" -p "$PATCH" -w "$WIRED" $EXTRA_OPTIONS sensor "$DESC"
+		domopi_create -t "$TIPO" -p "$PATCH" -w "$WIRED" -g "$GROUPID" sensor "$DESC"
 		domopi_time_elapsed create
 	done
 }
@@ -381,6 +382,7 @@ function master_page_7()
 
 function master_page_8()
 {
+	# Rimuove sensori da un gruppo
 	domopi_notice NON IMPLEMENTATO
 }
 
@@ -388,7 +390,7 @@ function master_page_9()
 {
 # TODO: Scegliere opzioni di selezione per device (-d) o persensore (-s) o per tipo (-t)
 	echo "Tutti i wired configurati:"
-	domopi_get_wiredpi
+	domopi_get_wiredpi | more
 	domopi_notice
 }
 

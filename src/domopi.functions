@@ -74,7 +74,7 @@ DOMOPI_FILE_SCHEMA['global']='# groupID:device:sensorID:patchin:patchout:wiredpi
 #declare -A DOMOPI_SCHEMA_COL_global
 
 # Physical configuration
-DOMOPI_FILE_SCHEMA['modules']='# modulename:defaultstate:wiredpi:type:used'
+DOMOPI_FILE_SCHEMA['modules']='# modulename:defaultstate:inverse:wiredpi:type:used'
 # NOTA: In caso di bash < 4.2 dichiarare a questo livello
 #declare -A DOMOPI_SCHEMA_COL_modules
 
@@ -1112,16 +1112,13 @@ function domopi_create()
 	local WIREDPI
 	local TYPE=group
 	local MODULES_CONF_FILE
-	local AUTO_CREATE_VIRTUAL=false
 	local IS_VIRTUAL=false
 	local UUID=$DOMOPI_IDENT_UUID	# local device
 
-
 	# Processa opzioni locali
 	local OPTIND=1 OPTARG opt
-	while getopts ":ad:p:t:vw:" opt; do
+	while getopts ":d:g:p:t:vw:" opt; do
 		case $opt in
-		a)	AUTO_CREATE_VIRTUAL=true ;;
 		d)	UUID=$OPTARG ;;	# remote device
 		g)	GROUPID=$OPTARG ;;	# solo per sensori
 		p)	PATCHNUMBER=$OPTARG ;;
@@ -1155,6 +1152,7 @@ function domopi_create()
 	"VSWITCH")
 		[ -n "$PATCHNUMBER" ] && PATCH="patchin:$PATCHNUMBER" 
 		IS_VIRTUAL=true
+		DEFAULTSTATE=0
 		;;
 	"ALARM")
 		[ -n "$PATCHNUMBER" ] && PATCH="patchout:$PATCHNUMBER patchin:$PATCHNUMBER" 
@@ -1164,21 +1162,30 @@ function domopi_create()
 	"PULSE")
 		[ -n "$PATCHNUMBER" ] && PATCH="patchin:$PATCHNUMBER" 
 		;;
-	"group")
+	"GSWITCH")
+		IS_VIRTUAL=true
+		DEFAULTSTATE=0
+		if [ -n "$PATCHNUMBER" ] || [ -n "$WIREPI" ]; then
+			echo 'ERROR: group switch *must* not have patch and wiredpi number' >&2 
+			return 1
+		fi
+		if [ -z "$GROUPID" ]; then
+			echo 'ERROR: group switch *must* have groupid. Use -g' >&2 
+			return 1
+		fi
 		;;
 	*)
-		echo FATAL: type not implemented >&2
+		echo FATAL: type $TYPE not implemented >&2
 		return 1
 		;;
 	esac
-
 
 
 	case "$1" in
 	sensor)
 		# Ricerca wiredpi per tipo tra disponibili
 
-		## TODO: un virtual switch non ha default state e wiredpi
+		## un virtual switch non wiredpi
 		if ! $IS_VIRTUAL ; then
 
 			# Read schema
@@ -1221,18 +1228,25 @@ function domopi_create()
 		fd=$?	# Non usato direttamente
 		[ $fd -eq 255 ] && return 1
 
+		# Verifica gruppo (se espresso)
+		if [ -n "$GROUPID" ]; then
+			_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" groupID "groupID=$GROUPID" >/dev/null
+			[ ${#DOMOPI_groupID[@]} -eq 0 ] && echo ERROR: domopi_create: group $GROUPID does not exists. >&2 && return 3
+		fi
+
+
 		# TODO: device potrà essere un ID sequenziale in presenza
 		#		di master.cfg che definisca il legame con UUID
 		echo "NOTICE: master.cfg ignored: device use UUID" >&2
-		_domopi_insert_row "$DOMOPI_GLOBAL_CONF" device:"$UUID" sensorID:'*' "descriptionU:$2" currentstate:"$DEFAULTSTATE" wiredpi:"$WIREDPI" type:"$TYPE" "$PATCH" 
+		_domopi_insert_row "$DOMOPI_GLOBAL_CONF" device:"$UUID" sensorID:'*' "descriptionU:$2" currentstate:"$DEFAULTSTATE" wiredpi:"$WIREDPI" type:"$TYPE" groups:"$GROUPID" "$PATCH" 
 
 		# NOTA: Il vincolo di univocità sulle descrizioni impone
 		#		di alterare il nome originale.
 		#	TODO: Per il momento applichiamo suffisso VIRT
 		#
-		$AUTO_CREATE_VIRTUAL && [ "$TYPE" = "SWITCH" ] &&
-		_domopi_insert_row "$DOMOPI_GLOBAL_CONF" device:"$UUID" sensorID:'*' "descriptionU:${2}VIRT" currentstate:"$DEFAULTSTATE" type:"VSWITCH" "$PATCH" 
-		ret=$?
+		#$AUTO_CREATE_VIRTUAL && [ "$TYPE" = "SWITCH" ] &&
+		#_domopi_insert_row "$DOMOPI_GLOBAL_CONF" device:"$UUID" sensorID:'*' "descriptionU:${2}VIRT" currentstate:"$DEFAULTSTATE" type:"VSWITCH" "$PATCH" 
+		#ret=$?
 
 		_domopi_file_close $fd
 		;;
@@ -1551,7 +1565,7 @@ echo $MODULES_CONF_FILE
 #
 #	$1 - columnName for match
 #	$2 - value to match
-#	$3 - New state
+#	$3 - New state [0 = low, 1 = high]
 #
 #	La transizionepuò avvenire senza restrizioni di device
 #
@@ -1605,7 +1619,7 @@ function _domopi_do_transition_by()
 #	Imposta stato di un sensore o un gruppo di sensori
 #
 #	$1 - Criterio di ricerca
-#	$2 - New state
+#	$2 - New state [0 = low, 1 = high]
 #	-d device UUID
 #	-g - Il criterio di ricerca si riferisce ad un gruppo
 #	-n - Usa criterio di ricerca numerico (ID) invece che espressione regolare su descrizione
@@ -1632,7 +1646,9 @@ function _domopi_do_transition_by()
 #
 #	TODO: Implementare selettore per gruppo
 #
-#	Esempio: domopi_set_state 1 on
+#	Esempio: domopi_set_state 1 1
+#	Esempio: domopi_set_state 1 0
+#
 #
 #	@author Andrea Tassotti
 #
@@ -1661,6 +1677,12 @@ function domopi_set_state()
 		esac
 	done
 	shift $((OPTIND-1))
+
+	if [[ "$2" != '0' ]] && [[ "$2" != '1' ]] ; then
+		echo FATAL: GPIO interface only accept 0/1 values >&2
+		return 1
+	fi
+	
 
 	if $GROUP ; then
 		echo Gruppi non implementati
@@ -1966,7 +1988,7 @@ function domopi_group_add_sensor()
 	[ $# -lt 2 ] && echo Argument required && return 2
 	
 	_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" groupID "groupID=$1" >/dev/null
-	[ ${#DOMOPI_groupID[@]} -eq 0 ] && echo WARNING: domopi_group_add_sensor: group $1 does not exists. >&2 && return 3
+	[ ${#DOMOPI_groupID[@]} -eq 0 ] && echo ERROR: domopi_group_add_sensor: group $1 does not exists. >&2 && return 3
 
 	_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" groups "sensorID=$2" >/dev/null
 
