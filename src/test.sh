@@ -1,4 +1,4 @@
-#!/bin/bash
+bin/bash
 
 COLOR_BLUE='\033[34m'
 COLOR_RED='\033[1;31m'
@@ -160,12 +160,20 @@ function create()
 		if [ $TIPO != "GSWITCH" ]; then
 		echo -n "Patch number (lasciare vuoto se non usato): "
 		read PATCH
+
+		echo -n "Si vuole creare il sensore in un gruppo?: "
+		read 
+			if [ $REPLY = 'y' -o $REPLY = 'Y' -o $REPLY = 's' -o $REPLY = 'S' ]; then
+			echo -n "ID gruppo: "
+			read GROUPID
+			fi
 		fi
 	
 		if [ $TIPO != "GSWITCH" ] && [ $TIPO != "VSWITCH" ]; then
 		echo -n "WiredPI number (lascare vuoto per automatico): "
 		read WIRED
 		fi
+
 
 		if [ $TIPO = "GSWITCH" ]; then
 		echo -n "Si sta creando uno switch di gruppo; indicare id di gruppo: "
@@ -302,10 +310,11 @@ function master_page()
 	echo '[ 6] - Lista sensori'
 	echo '[ 7] - Rimozione sensore'
 	echo '[ 8] - Rimuovi sensore da un gruppo'
-	echo '[ 9] - Lista wiredpi configurati'
-	echo '[10] - Lista gruppi'
-	echo '[11] - Simulazione stati'
-	echo '[12] - Run'
+	echo '[ 9] - Rimozione gruppo'
+	echo '[10] - Lista wiredpi configurati'
+	echo '[11] - Lista gruppi'
+	echo '[12] - Simulazione stati'
+	echo '[13] - Run'
 	echo '[ q] - Quit'
 }
 
@@ -382,11 +391,39 @@ function master_page_7()
 
 function master_page_8()
 {
+	domopi_notice NOT IMPLEMENTED
+	return
+
+	echo 'Rimuove sensore da un gruppo'
+	echo -n "ID del gruppo : "
+	read GROUPID
+	[[ "$GROUPID" = "end" ]] && return;
+
+	echo -n "ID del sensore (scrivere 'end' per terminare): "
+	read SENSORID
+	[[ "$SENSORID" = "end" ]] && break;
+
 	# Rimuove sensori da un gruppo
-	domopi_notice NON IMPLEMENTATO
+	domopi_group_remove_sensor "$GROUPID" "$SENSORID"
+	domopi_notice
 }
 
 function master_page_9()
+{
+	# Rimuove gruppo
+	DONE="false"
+	while [ $DONE != "true" ]
+	do
+		echo -n "ID del gruppo da rimuovere (scrivere 'end' per terminare): "
+		read ID
+		[ -z "$ID" ] && continue
+		[[ "$ID" = "end" ]] && break;
+		echo
+		domopi_destroy -n group $ID
+	done
+}
+
+function master_page_10()
 {
 # TODO: Scegliere opzioni di selezione per device (-d) o persensore (-s) o per tipo (-t)
 	echo "Tutti i wired configurati:"
@@ -394,7 +431,7 @@ function master_page_9()
 	domopi_notice
 }
 
-function master_page_10()
+function master_page_11()
 {
 	echo "Lista gruppi"
 	domopi_list group | more
@@ -402,12 +439,12 @@ function master_page_10()
 	return 0
 }
 
-function master_page_11()
+function master_page_12()
 {
 	state_simulation 
 }
 
-function master_page_12()
+function master_page_13()
 {
 	echo Si pone in ascolto tutti gli input per attuare gli stati
 	echo "Running ..."
