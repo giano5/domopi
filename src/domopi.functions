@@ -803,6 +803,8 @@ function _domopi_delete_row()
 #	$@ lista coppie key:value per i valori da impostare,  lista coppie key=value per chiavi ricerca (AND)
 #	$? - 0 = aggiornamento avvenuto, 1 = aggiornamento non avvenuto, 255 = errore nella gestione file
 #
+#	Nel calore da impostare "x" e "null" sono considerati valore nullo
+#
 function _domopi_update_row()
 {
 	local VERBOSE=false
@@ -902,9 +904,16 @@ function _domopi_update_row()
 		local row_to_be=""
 		for key in	$( eval echo \${DOMOPI_SCHEMA_$DOMOPI_SCHEMA_NAME[@]} )
 		do
+			# In realtà dovrebbe controllare che esista la chiave
 			if [ -n "${columns[$key]}" ]
 			then
-				row_to_be="$row_to_be${columns[$key]}:"
+				if [ "${columns[$key]}" = "x" ] ||
+				   [ "${columns[$key]}" = "null" ] ; then
+					row_to_be="${row_to_be}:"
+				else
+					row_to_be="$row_to_be${columns[$key]}:"
+					
+				fi
 			else
 				# Deve recuperare il vero dato
 				_domopi_column_by_name "$DOMOPI_SCHEMA_NAME" "$key" >/dev/null
@@ -2080,8 +2089,12 @@ function domopi_group_add_sensor()
 	# BUG: Non usare direttamente espressione ${DOMOPI_groups[@]}
 	# nei doppi apici
 	OLDGROUPS=${DOMOPI_groups[@]}
+# TODO: sostituire grep con altro
 	if ! echo $OLDGROUPS | grep -w $1 >/dev/null ; then
-		_domopi_update_row -q "$DOMOPI_GLOBAL_CONF" "groups:$OLDGROUPS $1" "sensorID=$2"
+		groups="$OLDGROUPS $1"
+		groups=${groups## }
+		groups=${groups%% }
+		_domopi_update_row -q "$DOMOPI_GLOBAL_CONF" groups:"$groups" "sensorID=$2"
 	else
 		echo WARNING: domopi_group_add_sensor: sensor $2 belong to group $1 yet
 	fi
@@ -2123,11 +2136,11 @@ function domopi_group_remove_sensor()
 
 	group=${1//\ /}
 	groups=" $groups "
-echo -n ${group} | hexdump -C
-echo -n ${2} | hexdump -C
-echo -n ${groups} | hexdump -C
-	echo groups before: :${groups}:
-	echo groups after : :${groups/@( )${group}@( )/ }:
+	groups="${groups/@( )${group}@( )/ }"
+	groups=${groups## }
+	groups=${groups%% }
+	[ -z "$groups" ] && groups=x
+	_domopi_update_row -q "$DOMOPI_GLOBAL_CONF" groups:"$groups" "sensorID=$2"
 
 	_domopi_file_close $fd
 }
@@ -2169,6 +2182,8 @@ function domopi_get_sensors_of_group()
 # Bootstrap
 #
 echo DomoPI API bootstrap ...
+shopt -s expand_aliases 
+shopt -s extglob 
 [ -f $DOMOPI_IDENT_FILE ] && domopi_ident 
 
 

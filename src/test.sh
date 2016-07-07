@@ -8,6 +8,7 @@ CLOCK_COLOR='\033[1;39;44m'
 
 # Indicare eventuale altro percorso
 . domopi.functions
+shopt >opt.prog
 
 # Show running clock
 #
@@ -391,9 +392,6 @@ function master_page_7()
 
 function master_page_8()
 {
-	domopi_notice NOT IMPLEMENTED
-	return
-
 	echo 'Rimuove sensore da un gruppo'
 	echo -n "ID del gruppo : "
 	read GROUPID
@@ -404,8 +402,9 @@ function master_page_8()
 	[[ "$SENSORID" = "end" ]] && break;
 
 	# Rimuove sensori da un gruppo
+	domopi_timer_start group_remove_sensor
 	domopi_group_remove_sensor "$GROUPID" "$SENSORID"
-	domopi_notice
+	domopi_time_elapsed group_remove_sensor
 }
 
 function master_page_9()
