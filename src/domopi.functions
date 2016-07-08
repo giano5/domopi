@@ -1685,23 +1685,24 @@ function _domopi_do_transition_by()
 	local UUID=$DOMOPI_IDENT_UUID	# local device
 	_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" device currentstate patchin $1=$2 >/dev/null
 	read device REST <<< ${DOMOPI_device[@]}
-
+	read patchnumber REST <<< ${DOMOPI_patchin[@]}
 
 	# No transition
-	[[ $3 = ${DOMOPI_currentstate[0]} ]] && return 1
+	[[ $3 = ${DOMOPI_currentstate[0]} ]] && return 2
 
 	# No propagation
-	[ -z "${DOMOPI_patchin[0]}" ] && return 0
+	[ -z "$patchnumber" ] && return 0
 
 	# Propagation
-	_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" device sensorID wiredpi patchout=${DOMOPI_patchin[0]} > /dev/null
+	_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" device sensorID wiredpi patchout=$patchnumber > /dev/null
 	[ "$device" != "$UUID" ] && echo "NOTICE: Propagate state on different devices" >&2
 
 	${DOMOPI_PRE_TRANSITION_CALLBACK:-true} $3 
 
-	in=${DOMOPI_sensorID[@]}
-	in=${in//\ /\|}
-	_domopi_update_row -v "$DOMOPI_GLOBAL_CONF" currentstate:$3 sensorID=$in
+	# Simula clausola OR con due operazioni
+	_domopi_update_row -v "$DOMOPI_GLOBAL_CONF" currentstate:$3 patchin=$patchnumber 
+	_domopi_update_row -v "$DOMOPI_GLOBAL_CONF" currentstate:$3 patchout=$patchnumber 
+
 	${DOMOPI_POST_TRANSITION_CALLBACK:-true} $3
 
 	return 0
@@ -1714,16 +1715,18 @@ function _domopi_do_transition_by()
 #	$1 - Criterio di ricerca
 #	$2 - New state [0 = low, 1 = high]
 #	-d device UUID
-#	-g - Il criterio di ricerca si riferisce ad un gruppo
 #	-n - Usa criterio di ricerca numerico (ID) invece che espressione regolare su descrizione
 #	-w - Usa un criterio di ricerca numerico su wiredPI
 #
-#	Non forza uso di alcun tipo (puo' essere numerico o alfanumerico)
-#	Un valore vuoto per lo stato non cancella lo stato corrente: se
-#	il sensore appartiene ad un gruppo eredita lo stato dal gruppo
-#	(il primo se appartiene a più gruppi)
-#	Aggiorna gli stati di tutti i sensori con patchout pari al patchin
-#	del sensore su cui è applicato
+#	Adotta la convenzione degli stati del comando gpio,
+#	ma gli stati indicati in argomento non sono necessariamente
+#	quelli per il sensore oggetto di modifica, in quanto
+#	questi potranno essere modulati in ragione dell'essere il sensore
+#	a logica inversa.
+#
+#	Aggiorna gli stati di tutti i sensori con patchin o patchout pari al
+#	patchin del sensore su cui è applicato. Non è possibile settare
+#	uno stato ad un sensore con solo patchout.
 #
 #	Utilizza DOMOPI_PRE_TRANSITION_CALLBACK per eseguire un codice
 #	prima di salvare la configurazione di stato: fornire nome di una
@@ -1736,8 +1739,6 @@ function _domopi_do_transition_by()
 #	${DOMOPI_sensorID[@]}
 #	${DOMOPI_wiredpi[@]}
 #
-#
-#	TODO: Implementare selettore per gruppo
 #
 #	Esempio: domopi_set_state 1 1
 #	Esempio: domopi_set_state 1 0
@@ -1763,7 +1764,6 @@ function domopi_set_state()
 	while getopts ":gnw" opt; do
 		case $opt in
 		d)	UUID=$OPTARG ;;	# remote device
-		g)	GROUP=true ;;
 		n)	COLUMN_TO_MATCH=sensorID ;;
 		w)	COLUMN_TO_MATCH=wiredpi ;;
 		:)	echo argument required ; return ;;
@@ -1784,8 +1784,6 @@ function domopi_set_state()
 		# TODO: cercare tutti i sensori che appartengono al gruppo
 		#       e impostarelo stesso stato
 	else
-# TODO: se $2 è vuoto, occorre cercare stato del groupID primario per il
-# sensore
 		_domopi_do_transition_by $COLUMN_TO_MATCH "$1" "$2"
 		ret=$?
 		[ $ret -eq 0 ] && _domopi_update_row "$DOMOPI_GLOBAL_CONF" currentstate:$2 $COLUMN_TO_MATCH="$1" device="$UUID"
