@@ -465,7 +465,7 @@ function _domopi_select_row()
 		if [[ "$a" =~ .*=.* ]]; then
 			key="${a%%=*}"
 			value="${a##*=}"
-			where[$key]="$value"
+			[ -n "$key" ] && where[$key]="$value"
 		else
 			unset DOMOPI_$a
 			columns["$a"]=$position
@@ -1656,9 +1656,8 @@ function domopi_destroy()
 #	Esegue una transizione di stato utilizzando un nome di colonna
 #	variabile percercare gli oggetti da modificare
 #
-#	$1 - columnName for match
-#	$2 - value to match
-#	$3 - New state [0 = low, 1 = high]
+#	$1 - patch number
+#	$2 - New state [0 = low, 1 = high]
 #
 #	La transizionepuò avvenire senza restrizioni di device
 #
@@ -1676,34 +1675,21 @@ function domopi_destroy()
 #	${DOMOPI_wiredpi[@]}
 #	
 #
-# TODO: Supportare gruppi 
-#
 #	@author Andrea Tassotti
 #
-function _domopi_do_transition_by()
+function _domopi_do_sensor_transition()
 {
-	local UUID=$DOMOPI_IDENT_UUID	# local device
-	_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" device currentstate patchin $1=$2 >/dev/null
-	read device REST <<< ${DOMOPI_device[@]}
-	read patchnumber REST <<< ${DOMOPI_patchin[@]}
-
-	# No transition
-	[[ $3 = ${DOMOPI_currentstate[0]} ]] && return 2
-
-	# No propagation
-	[ -z "$patchnumber" ] && return 0
-
 	# Propagation
-	_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" device sensorID wiredpi patchout=$patchnumber > /dev/null
-	[ "$device" != "$UUID" ] && echo "NOTICE: Propagate state on different devices" >&2
+	_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" sensorID wiredpi patchout=$1 > /dev/null
 
-	${DOMOPI_PRE_TRANSITION_CALLBACK:-true} $3 
+
+	${DOMOPI_PRE_TRANSITION_CALLBACK:-true} $2
 
 	# Simula clausola OR con due operazioni
-	_domopi_update_row -v "$DOMOPI_GLOBAL_CONF" currentstate:$3 patchin=$patchnumber 
-	_domopi_update_row -v "$DOMOPI_GLOBAL_CONF" currentstate:$3 patchout=$patchnumber 
+	_domopi_update_row -v "$DOMOPI_GLOBAL_CONF" currentstate:$2 patchin=$1 
+	_domopi_update_row -v "$DOMOPI_GLOBAL_CONF" currentstate:$2 patchout=$1 
 
-	${DOMOPI_POST_TRANSITION_CALLBACK:-true} $3
+	${DOMOPI_POST_TRANSITION_CALLBACK:-true} $2
 
 	return 0
 }
@@ -1751,7 +1737,6 @@ function domopi_set_state()
 {
 	local COLUMN_TO_MATCH=descriptionU
 	local UUID=$DOMOPI_IDENT_UUID	# local device
-	local GROUP=false
 	local ret=1
 	# Il file di configurazione deve esistere inizializzato
 	# Read schema
@@ -1765,7 +1750,7 @@ function domopi_set_state()
 		case $opt in
 		d)	UUID=$OPTARG ;;	# remote device
 		n)	COLUMN_TO_MATCH=sensorID ;;
-		w)	COLUMN_TO_MATCH=wiredpi ;;
+		w)	COLUMN_TO_MATCH=wiredpi ;;	## IMPLICA DEVICE
 		:)	echo argument required ; return ;;
 		esac
 	done
@@ -1775,19 +1760,26 @@ function domopi_set_state()
 		echo FATAL: GPIO interface only accept 0/1 values >&2
 		return 1
 	fi
-	
 
-	if $GROUP ; then
-		echo Gruppi non implementati
-			#_domopi_update_row "$DOMOPI_GLOBAL_CONF" currentstate:$2 groupID=$1
-			#_domopi_update_row "$DOMOPI_GLOBAL_CONF" currentstate:$2 sensorID=x descriptionU="$1"
-		# TODO: cercare tutti i sensori che appartengono al gruppo
-		#       e impostarelo stesso stato
+	
+	local patchnumber
+	if [[ "$COLUMN_TO_MATCH" = "wiredpi" ]]; then
+		_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" currentstate patchin device=$UUID $COLUMN_TO_MATCH=$1 >/dev/null
 	else
-		_domopi_do_transition_by $COLUMN_TO_MATCH "$1" "$2"
-		ret=$?
-		[ $ret -eq 0 ] && _domopi_update_row "$DOMOPI_GLOBAL_CONF" currentstate:$2 $COLUMN_TO_MATCH="$1" device="$UUID"
+		_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" currentstate patchin $COLUMN_TO_MATCH=$1 >/dev/null
 	fi
+
+	read patchnumber REST <<< ${DOMOPI_patchin[@]}
+
+	# No transition
+	[[ $2 = ${DOMOPI_currentstate[0]} ]] && _domopi_file_close $fd && return 2
+
+	# No propagation
+	[ -z "$patchnumber" ] && _domopi_file_close $fd && return 0
+
+	_domopi_do_sensor_transition "$patchnumber" "$2"
+	ret=$?
+	# [ $ret -eq 0 ] && _domopi_update_row "$DOMOPI_GLOBAL_CONF" currentstate:$2 $COLUMN_TO_MATCH="$1" device="$UUID"
 
 	_domopi_file_close $fd
 	return $ret
