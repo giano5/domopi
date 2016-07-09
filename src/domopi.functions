@@ -654,7 +654,7 @@ function _domopi_insert_row()
 		if [[ "$key" =~ U$ ]]
 		then
 			_domopi_column_by_name "$DOMOPI_SCHEMA_NAME" "$key" >/dev/null
-			if grep -v '^#' "$file" | cut -d: -f$((DOMOPI_CONF_FILE_COL_NUMBER + 1 ))| grep "$value" >/dev/null
+			if grep -v '^#' "$file" | cut -d: -f$((DOMOPI_CONF_FILE_COL_NUMBER + 1 ))| grep -w "$value" >/dev/null
 			then
 				echo WARNING: duplicate value $value in column $key >&2
 				return 255
@@ -1764,22 +1764,44 @@ function domopi_set_state()
 	
 	local patchnumber
 	if [[ "$COLUMN_TO_MATCH" = "wiredpi" ]]; then
-		_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" currentstate patchin device=$UUID $COLUMN_TO_MATCH=$1 >/dev/null
+		_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" type currentstate patchin device=$UUID groups $COLUMN_TO_MATCH=$1 >/dev/null
 	else
-		_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" currentstate patchin $COLUMN_TO_MATCH=$1 >/dev/null
+		_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" type currentstate patchin groups $COLUMN_TO_MATCH=$1 >/dev/null
 	fi
 
+	read type REST <<< ${DOMOPI_type[@]}
 	read patchnumber REST <<< ${DOMOPI_patchin[@]}
+	read groups REST <<< ${DOMOPI_groups[@]}
 
 	# No transition
 	[[ $2 = ${DOMOPI_currentstate[0]} ]] && _domopi_file_close $fd && return 2
 
-	# No propagation
-	[ -z "$patchnumber" ] && _domopi_file_close $fd && return 0
+	if [ $type = "GSWITCH" ]; then
+		echo "Transizione stato per gruppi: $groups"
+# Imposta lo stato a tutti gli elementi nel gruppo; se nel gruppo sono presenti altri sensori in con patch number, questi propagano tramite transizione per patch (comando a cascata).
 
-	_domopi_do_sensor_transition "$patchnumber" "$2"
-	ret=$?
-	# [ $ret -eq 0 ] && _domopi_update_row "$DOMOPI_GLOBAL_CONF" currentstate:$2 $COLUMN_TO_MATCH="$1" device="$UUID"
+#### TODO: INSUFFICIENTE, occorre cercare tutti i sensori in ogni possibile gruppo a cui appartiene interruttore indicato: groups è una lista
+	# Propagation
+	_domopi_select_row "$DOMOPI_GLOBAL_CONF" sensorID wiredpi patchin groups="[0-9\ ]*$groups[0-9\ ]*"
+
+# Sincronizzazione stato interruttori gruppo
+
+# SELECT COUNT(*), groupID
+# FROM deviceconf A
+# JOIN devicefonf B ON MATCH(A.groupID , B.groups)
+# WHERE groupID IS NOT NULL
+# GROUP BY groupID 
+# per tutti i $groupID in cui COUNT(*) == 0:
+#     UPDATE deviceconf
+#     SET currentstate = 0
+#     WHERE MATCH(groups, $groupID)
+	else	
+		# No propagation
+		[ -z "$patchnumber" ] && _domopi_file_close $fd && return 0
+
+		_domopi_do_sensor_transition "$patchnumber" "$2"
+		ret=$?
+	fi
 
 	_domopi_file_close $fd
 	return $ret
