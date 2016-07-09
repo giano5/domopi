@@ -1680,7 +1680,7 @@ function domopi_destroy()
 function _domopi_do_sensor_transition()
 {
 	# Propagation
-	_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" sensorID wiredpi patchout=$1 > /dev/null
+	_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" device sensorID wiredpi patchout=$1 > /dev/null
 
 
 	${DOMOPI_PRE_TRANSITION_CALLBACK:-true} $2
@@ -1724,6 +1724,13 @@ function _domopi_do_sensor_transition()
 #	disponibili le colonne della configurazione sensorID e wiredpi con:
 #	${DOMOPI_sensorID[@]}
 #	${DOMOPI_wiredpi[@]}
+#
+#	Per transizioni gruppi utilizza DOMOPI_GROUP_PRE_TRANSITION_CALLBACK
+#	e DOMOPI_GROUP_POST_CALLBACK. A differenzadella callback per i sensori
+#	normali, le funzioni per gruppo hanno seguente prototipo:
+#	device sensorID wiredpi type state
+#
+#	e sono invocate solo su sensori con wiredpi non vuoto.
 #
 #
 #	Esempio: domopi_set_state 1 1
@@ -1771,18 +1778,45 @@ function domopi_set_state()
 
 	read type REST <<< ${DOMOPI_type[@]}
 	read patchnumber REST <<< ${DOMOPI_patchin[@]}
-	read groups REST <<< ${DOMOPI_groups[@]}
+	groups=${DOMOPI_groups[@]}
 
 	# No transition
 	[[ $2 = ${DOMOPI_currentstate[0]} ]] && _domopi_file_close $fd && return 2
 
-	if [ $type = "GSWITCH" ]; then
-		echo "Transizione stato per gruppi: $groups"
+	if [[ "$type" = "GSWITCH" ]]; then
+		echo "Transizione stato per i gruppi: $groups"
+	IN=""
+	for group in $groups
+	do
+		IN="$IN([[:blank:][:digit:]]+)*${group}([[:blank:][:digit:]]+)*|"
+	done
+	IN=${IN%"${IN##*[!|]}"}
 # Imposta lo stato a tutti gli elementi nel gruppo; se nel gruppo sono presenti altri sensori in con patch number, questi propagano tramite transizione per patch (comando a cascata).
+# i GSWITCH non hanno per costruzione un patch number
 
-#### TODO: INSUFFICIENTE, occorre cercare tutti i sensori in ogni possibile gruppo a cui appartiene interruttore indicato: groups è una lista
 	# Propagation
-	_domopi_select_row "$DOMOPI_GLOBAL_CONF" sensorID wiredpi patchin groups="[0-9\ ]*$groups[0-9\ ]*"
+	_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" device sensorID type wiredpi patchin groups="$IN" >/dev/null
+
+	local _idx
+	for((_idx=0;_idx<${#DOMOPI_sensorID[@]};_idx++))
+	do
+		if [ -z "${DOMOPI_patchin[$_idx]}" ] ; then
+			echo Transizione sensore ${DOMOPI_sensorID[$_idx]} per gruppo
+	
+			[ -n "${DOMOPI_wiredpi[$_idx]}" ] && ${DOMOPI_GROUP_PRE_TRANSITION_CALLBACK:-true} ${DOMOPI_device[$_idx]} ${DOMOPI_sensorID[$_idx]} ${DOMOPI_wiredpi[$_idx]} ${DOMOPI_type[$_idx]} $2
+
+			_domopi_update_row -v "$DOMOPI_GLOBAL_CONF" currentstate:$2 sensorID=${DOMOPI_sensorID[$_idx]}
+			ret=$?
+
+			[ -n "${DOMOPI_wiredpi[$_idx]}" ] && ${DOMOPI_GROUP_POST_TRANSITION_CALLBACK:-true} ${DOMOPI_device[$_idx]} ${DOMOPI_sensorID[$_idx]} ${DOMOPI_wiredpi[$_idx]} ${DOMOPI_type[$_idx]} $2
+		else
+			echo Propagazione transizione sensore ${DOMOPI_sensorID[$_idx]} per patch number ${DOMOPI_patchin[$_idx]}
+			# ATTENZIONE: Usare sottoshell per evitare conclutto variabili DOMOPI_
+			( _domopi_do_sensor_transition "${DOMOPI_patchin[$_idx]}" "$2" )
+			ret=$?
+		fi
+	done
+
 
 # Sincronizzazione stato interruttori gruppo
 
@@ -1797,7 +1831,7 @@ function domopi_set_state()
 #     WHERE MATCH(groups, $groupID)
 	else	
 		# No propagation
-		[ -z "$patchnumber" ] && _domopi_file_close $fd && return 0
+		[ -z "$patchnumber" ] && echo WARNING: Given sensor is not an input && _domopi_file_close $fd && return 0
 
 		_domopi_do_sensor_transition "$patchnumber" "$2"
 		ret=$?

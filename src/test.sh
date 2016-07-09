@@ -37,6 +37,7 @@ IDOWIRED="ID"
 IDOWIRED_NEXT="WIREDPI"
 
 DOMOPI_PRE_TRANSITION_CALLBACK=test_callback
+DOMOPI_GROUP_PRE_TRANSITION_CALLBACK=test_callback_group
 
 #
 # Funzione pulizia eventuali procedure e situazioni sospese
@@ -66,6 +67,11 @@ function test_callback()
 		[ "$UUID" = "${DOMOPI_device[$index]}" ] && 
 			echo gpio write ${DOMOPI_wiredpi[$index]} $1
 	done
+}
+
+function test_callback_group()
+{
+	echo execut callback for group $@
 }
 
 
