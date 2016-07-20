@@ -82,8 +82,7 @@ function init()
 		echo "DOMOPI - Inizializzazione -------------------"
 		echo
 		echo "ATTENZIONE! Sovrascrive configurazione esistente"
-		echo -n "Inserire un nome per l'unità: "
-		read NAME
+		read -ep "Inserire un nome per l'unità: " NAME
 
 # Fase inizializzazione dispositivo
 #
@@ -158,33 +157,27 @@ function create()
 	DONE="false"
 	while [ $DONE != "true" ]
 	do
-		echo -n "Nome del sensore (scrivere 'end' per terminare): "
-		read DESC
+		read -ep "Nome del sensore (scrivere 'end' per terminare): " DESC
 		[[ "$DESC" = "end" ]] && break;
 
 		select_tipo
 
 		if [ $TIPO != "GSWITCH" ]; then
-		echo -n "Patch number (lasciare vuoto se non usato): "
-		read PATCH
+		read -ep "Patch number (lasciare vuoto se non usato): " PATCH
 
-		echo -n "Si vuole creare il sensore in un gruppo?: "
-		read 
+		read -ep "Si vuole creare il sensore in un gruppo?: "
 			if [ $REPLY = 'y' -o $REPLY = 'Y' -o $REPLY = 's' -o $REPLY = 'S' ]; then
-			echo -n "ID gruppo: "
-			read GROUPID
+			read -ep -n "ID gruppo: " GROUPID
 			fi
 		fi
 	
 		if [ $TIPO != "GSWITCH" ] && [ $TIPO != "VSWITCH" ]; then
-		echo -n "WiredPI number (lascare vuoto per automatico): "
-		read WIRED
+		read -ep "WiredPI number (lascare vuoto per automatico): " WIRED
 		fi
 
 
 		if [ $TIPO = "GSWITCH" ]; then
-		echo -n "Si sta creando uno switch di gruppo; indicare id di gruppo: "
-		read GROUPID
+		read -ep "Si sta creando uno switch di gruppo; indicare id di gruppo: " GROUPID
 		fi
 
 		domopi_timer_start create
@@ -198,17 +191,14 @@ function create_mult()
 	echo
 	echo "Creazione sensori multipli:"
 
-	echo -n "Nome del sensore (default=SENSOR): "
-	read DESC
+	read -ep "Nome del sensore (default=SENSOR): " DESC
 
 	select_tipo
 
-	echo -n "Patch number (lascare vuoto se non usato): "
-	read PATCH
+	read -ep "Patch number (lascare vuoto se non usato): " PATCH
 
 	echo
-	echo -n "Indicare quantità (default=10): "
-	read COUNT
+	read -ep -n "Indicare quantità (default=10): " COUNT
 	echo -n "Genero sensori "
 	domopi_timer_start create_mult
 	for((i=1;i<=${COUNT:-10};i++))
@@ -251,8 +241,7 @@ function state_simulation()
 	while [ $DONE != "true" ]
 	do
 		echo 'Lettura stato'
-		echo -n "$IDOWIRED del sensore (scrivere 'end' per terminare): "
-		read ID
+		read -ep "$IDOWIRED del sensore (scrivere 'end' per terminare): " ID
 		[ -z "$ID" ] && continue
 		[[ "$ID" = "end" ]] && break;
 		echo -ne "Stato corrente del sensore $ID: $COLOR_BLUE"
@@ -262,8 +251,7 @@ function state_simulation()
 			domopi_get_state -w $ID
 		fi
 		echo -e $COLOR_RESET
-		echo -n "Nuovo stato del sensore $ID (lasciare vuoto per non cambiare): "
-		read STATE
+		read -ep "Nuovo stato del sensore $ID (lasciare vuoto per non cambiare): " STATE
 		domopi_timer_start set_state
 		if [ $IDOWIRED = "ID" ]; then
 			[ -n "$STATE" ] && domopi_set_state -n $ID $STATE
@@ -349,8 +337,7 @@ function master_page_4()
 	DONE="false"
 	while [ $DONE != "true" ]
 	do
-		echo -n "Nome del gruppo (scrivere 'end' per terminare): "
-		read DESC
+		read -ep "Nome del gruppo (scrivere 'end' per terminare): " DESC
 		[[ "$DESC" = "end" ]] && break;
 
 		domopi_timer_start create
@@ -362,12 +349,10 @@ function master_page_4()
 function master_page_5()
 {
 	echo 'Aggiungi sensori ad un gruppo'
-	echo -n "ID del gruppo : "
-	read GROUPID
+	read -ep "ID del gruppo : " GROUPID
 	[[ "$GROUPID" = "end" ]] && return;
 
-	echo -n "ID del sensore (scrivere 'end' per terminare): "
-	read SENSORID
+	read -ep "ID del sensore (scrivere 'end' per terminare): " SENSORID
 	[[ "$SENSORID" = "end" ]] && break;
 
 	domopi_timer_start group_add_sensor
@@ -387,8 +372,7 @@ function master_page_7()
 	DONE="false"
 	while [ $DONE != "true" ]
 	do
-		echo -n "ID del sensore da rimuovere (scrivere 'end' per terminare): "
-		read ID
+		read -ep "ID del sensore da rimuovere (scrivere 'end' per terminare): " ID
 		[ -z "$ID" ] && continue
 		[[ "$ID" = "end" ]] && break;
 		echo
@@ -399,12 +383,10 @@ function master_page_7()
 function master_page_8()
 {
 	echo 'Rimuove sensore da un gruppo'
-	echo -n "ID del gruppo : "
-	read GROUPID
+	read -ep "ID del gruppo : " GROUPID
 	[[ "$GROUPID" = "end" ]] && return;
 
-	echo -n "ID del sensore (scrivere 'end' per terminare): "
-	read SENSORID
+	read -ep "ID del sensore (scrivere 'end' per terminare): " SENSORID
 	[[ "$SENSORID" = "end" ]] && break;
 
 	# Rimuove sensori da un gruppo
@@ -419,8 +401,7 @@ function master_page_9()
 	DONE="false"
 	while [ $DONE != "true" ]
 	do
-		echo -n "ID del gruppo da rimuovere (scrivere 'end' per terminare): "
-		read ID
+		read -ep "ID del gruppo da rimuovere (scrivere 'end' per terminare): " ID
 		[ -z "$ID" ] && continue
 		[[ "$ID" = "end" ]] && break;
 		echo
@@ -521,8 +502,7 @@ function modify_page_1()
 	DONE="false"
 	while [ $DONE != "true" ]
 	do
-		echo -n "$IDOWIRED del sensore (scrivere 'end' per terminare): "
-		read ID
+		read -ep "$IDOWIRED del sensore (scrivere 'end' per terminare): " ID
 		[ -z "$ID" ] && continue
 		[[ "$ID" = "end" ]] && break;
 		if [ $IDOWIRED = "ID" ]; then
@@ -531,8 +511,7 @@ function modify_page_1()
 			PATCH=$( domopi_get_patch -w $ID )
 		fi
 
-		echo -n "Patch number (attuale $PATCH Lasciare vuoto per annullare modifiche): "
-		read PATCH
+		read -ep "Patch number (attuale $PATCH Lasciare vuoto per annullare modifiche): " PATCH
 		[ -z "$PATCH" ] && break;
 
 		domopi_timer_start modify
@@ -550,13 +529,11 @@ function modify_page_2()
 	DONE="false"
 	while [ $DONE != "true" ]
 	do
-		echo -n "$IDOWIRED del sensore (scrivere 'end' per terminare): "
-		read ID
+		read -ep "$IDOWIRED del sensore (scrivere 'end' per terminare): " ID
 		[ -z "$ID" ] && continue
 		[[ "$ID" = "end" ]] && break;
 
-		echo -n "MaxExecutionTime (Lasciare vuoto per annullare modifiche): "
-		read MAXTIME
+		read -ep "MaxExecutionTime (Lasciare vuoto per annullare modifiche): " MAXTIME
 		[ -z "$MAXTIME" ] && break;
 
 		domopi_timer_start modify
@@ -575,8 +552,7 @@ function modify_page_3()
 	DONE="false"
 	while [ $DONE != "true" ]
 	do
-		echo -n "$IDOWIRED del sensore (scrivere 'end' per terminare): "
-		read ID
+		read -ep "$IDOWIRED del sensore (scrivere 'end' per terminare): " ID
 		[ -z "$ID" ] && continue
 		[[ "$ID" = "end" ]] && break;
 		if [ $IDOWIRED = "ID" ]; then
@@ -586,8 +562,7 @@ function modify_page_3()
 		fi
 
 		echo "$IDOWIRED $ID : $DESC"
-		echo -n "Nuova descrizione (Lasciare vuoto per annullare modifiche): "
-		read DESC
+		read -ep "Nuova descrizione (Lasciare vuoto per annullare modifiche): " DESC
 		[ -z "$DESC" ] && break;
 
 		domopi_timer_start modify
@@ -612,8 +587,7 @@ while ! $SHUTDOWN
 do
 	${CURRENT_PAGE}
 	echo
-	echo -ne "Seleziona una funzione: "
-	read OP
+	read -ep "Seleziona una funzione: " OP
 	[ -z "$OP" ] && continue
 	if [ $OP = "q" ]; then
 		# Ritorno a pagina superiore o temine
