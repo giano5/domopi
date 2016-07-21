@@ -38,6 +38,7 @@ IDOWIRED_NEXT="WIREDPI"
 
 DOMOPI_PRE_TRANSITION_CALLBACK=test_callback
 DOMOPI_GROUP_PRE_TRANSITION_CALLBACK=test_callback_group
+DOMOPI_POLL_CALLBACK=test_callback_poll
 
 #
 # Funzione pulizia eventuali procedure e situazioni sospese
@@ -63,15 +64,31 @@ function test_callback()
 
 	for index in ${!DOMOPI_wiredpi[@]}
 	do
-		# rimuovere echo per eseguire
+		# NOTA: rimuovere echo per eseguire
 		[ "$UUID" = "${DOMOPI_device[$index]}" ] && 
 			echo gpio write ${DOMOPI_wiredpi[$index]} $1
 	done
 }
 
+# Esempio
 function test_callback_group()
 {
-	echo execut callback for group $@
+	echo execute callback for group $@
+}
+
+
+#	SOLO SE OPERAZIONE SU DEVICE LOCALE
+# Esempio
+function test_callback_poll()
+{
+	newState=0
+	if [ -n "$1" ]; then
+		# NOTA: commentare o rimuovere per rendere operativo
+		newState=0
+		# NOTA: rimuovere commento per rendere operativo
+		#newState=$( gpio read $1 )
+	fi
+	return $newState
 }
 
 
@@ -171,8 +188,12 @@ function create()
 			fi
 		fi
 	
-		if [ $TIPO != "GSWITCH" ] && [ $TIPO != "VSWITCH" ]; then
+		if [ $TIPO != "VSWITCH" ] && [ $TIPO != "GSWITCH"] ; then
 		read -ep "WiredPI number (lascare vuoto per automatico): " WIRED
+		fi
+
+		if [ $TIPO == "GSWITCH" ]; then
+		read -ep "WiredPI number (lascare vuoto per virtuale): " WIRED
 		fi
 
 

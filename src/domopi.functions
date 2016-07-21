@@ -47,6 +47,15 @@ DOMOPI_BIN_PATH=.
 DOMOPI_API_PATH=domopi.functions
 
 
+# Production
+#DOMOPI_PIPE_PATH=/usr/local/var/run/domopi.states
+#DOMOPI_PIPE=$DOMOPI_PIPE_PATH/domopi.states
+# Development
+DOMOPI_PIPE_PATH=/tmp
+DOMOPI_PIPE=$DOMOPI_PIPE_PATH/domopi.states
+
+
+
 if [ -d "$DOMOPI_CONF_PATH/domopi.d" ]; then
 	DOMOPI_EXTENDED_CONF_PATH=$DOMOPI_CONF_PATH/domopi.d/
 else
@@ -989,6 +998,7 @@ function domopi_help()
 public domopi_man
 function domopi_man()
 {
+[ -f $DOMOPI_API_PATH ] &&
 /usr/bin/awk '
 /^##/				{ incomment=1; insummary=1; text=""; getline; }
 /^#[[:blank:]]*$/	{ insummary=0; getline; }
@@ -1242,12 +1252,13 @@ echo $@
 			[ -n "$PATCHNUMBER" ] && PATCH="patchin:$PATCHNUMBER" 
 			;;
 		"GSWITCH")
-			IS_VIRTUAL=true
+			IS_VIRTUAL=false
 			DEFAULTSTATE=0
-			if [ -n "$PATCHNUMBER" ] || [ -n "$WIREPI" ]; then
+			if [ -n "$PATCHNUMBER" ] ; then
 				echo 'ERROR: group switch *must* not have patch and wiredpi number' >&2 
 				return 1
 			fi
+			[ -z "$WIREPI" ] && IS_VIRTUAL=true
 			if [ -z "$GROUPID" ]; then
 				echo 'ERROR: group switch *must* have groupid. Use -g' >&2 
 				return 1
@@ -1771,6 +1782,7 @@ function domopi_set_state()
 	
 	local patchnumber
 	if [[ "$COLUMN_TO_MATCH" = "wiredpi" ]]; then
+		echo _domopi_select_row -q "$DOMOPI_GLOBAL_CONF" type currentstate patchin device=$UUID groups $COLUMN_TO_MATCH=$1 
 		_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" type currentstate patchin device=$UUID groups $COLUMN_TO_MATCH=$1 >/dev/null
 	else
 		_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" type currentstate patchin groups $COLUMN_TO_MATCH=$1 >/dev/null
@@ -1813,7 +1825,7 @@ function domopi_set_state()
 				[ -n "${DOMOPI_wiredpi[$_idx]}" ] && ${DOMOPI_GROUP_POST_TRANSITION_CALLBACK:-true} ${DOMOPI_device[$_idx]} ${DOMOPI_sensorID[$_idx]} ${DOMOPI_wiredpi[$_idx]} ${DOMOPI_type[$_idx]} $2
 			else
 				echo Propagazione transizione sensore ${DOMOPI_sensorID[$_idx]} per patch number ${DOMOPI_patchin[$_idx]}
-				# ATTENZIONE: Usare sottoshell per evitare conclutto variabili DOMOPI_
+				# ATTENZIONE: Usare sottoshell per evitare conflitto variabili DOMOPI_
 				( _domopi_do_sensor_transition "${DOMOPI_patchin[$_idx]}" "$2" )
 				ret=$?
 			fi
@@ -2217,6 +2229,9 @@ function domopi_group_add_sensor()
 ##
 #	$1 - groupID
 #	$2 - sensorID
+#
+#	@author Andrea Tassotti
+#
 public domopi_group_remove_sensor
 function domopi_group_remove_sensor()
 {
@@ -2263,6 +2278,7 @@ function domopi_group_remove_sensor()
 #	$1 - Sensore
 #
 #	TODO: Aumentare informazioni
+#
 #	@author Andrea Tassotti
 #
 public domopi_get_groups
@@ -2277,11 +2293,75 @@ function domopi_get_groups()
 #
 #	$1 - sensorID
 #
+#	@author Andrea Tassotti
+#
 public domopi_get_sensors_of_group
 function domopi_get_sensors_of_group()
 {
 	_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" device sensorID descriptionU "groups=[0-9\ ]*$1[0-9\ ]*"
 }
+
+
+##
+#	Poll for states of a list of sensors
+#
+#	Da eseguire con cadenza definita da progetto hardware.	
+#	Curiosità: Il nome deriva dalla primitiva di sistema Unix omonima
+#
+#	Write in DOMOPI_PIPE
+#
+#	@author Andrea Tassotti
+#
+public domopi_select
+function domopi_select()
+{
+	local UUID=$DOMOPI_IDENT_UUID   # local device
+
+	_domopi_file_open "$DOMOPI_GLOBAL_CONF"
+	fd=$?	# Non usato direttamente
+	[ $fd -eq 255 ] && return 1
+
+
+	_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" wiredpi currentstate device="$UUID" patchin=!null wiredpi=!null >/dev/null
+
+	
+	for idx in ${!DOMOPI_wiredpi[@]}
+	do
+		# Deve restituire il nuovo stato
+		${DOMOPI_POLL_CALLBACK:-true} ${DOMOPI_wiredpi[$idx]}
+		newState=$?
+		if [ $newState -ne ${DOMOPI_currentstate[$idx]} ] ; then
+			echo ${DOMOPI_wiredpi[$idx]} $newState >$DOMOPI_PIPE
+		fi
+	done 
+
+	_domopi_file_close $fd
+	return 0
+}
+
+
+##
+#	Fetch from DOMOPI_PIPE and set sensor states
+#
+#
+#	Read from DOMOPI_PIPE and act state
+#	Use domopi_set_state
+#
+#	@author Andrea Tassotti
+#
+public domopi_fetch
+function domopi_fetch()
+{
+	[ ! -p $DOMOPI_PIPE ] && return 1
+	while true;
+	do
+		read wiredpi state < $DOMOPI_PIPE
+		domopi_set_state -w $wiredpi $state >/dev/null
+		echo $?	# Numero transazioni derivanti
+	done
+	return 0
+}
+
 
 
 #-----------------------------------------------
@@ -2296,6 +2376,9 @@ echo DomoPI API bootstrap ...
 shopt -s expand_aliases 
 shopt -s extglob 
 [ -f $DOMOPI_IDENT_FILE ] && domopi_ident 
+
+[ ! -d $DOMOPI_PIPE_PATH ] && mkdir -p $DOMOPI_PIPE_PATH
+[ ! -p $DOMOPI_PIPE ] && mkfifo $DOMOPI_PIPE
 
 
 # Make private internal function
