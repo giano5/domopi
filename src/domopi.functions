@@ -54,6 +54,11 @@ DOMOPI_API_PATH=domopi.functions
 DOMOPI_PIPE_PATH=/tmp
 DOMOPI_PIPE=$DOMOPI_PIPE_PATH/domopi.states
 
+# Deve essere un percorso scrivibile da utente esecutore 
+# Deve essere un percorso persistente quindi su disco reale
+DOMOPI_POWERON_PATH=/var/run/domopi
+DOMOPI_POWERON_FILE=$DOMOPI_POWERON_PATH/poweron
+
 
 
 if [ -d "$DOMOPI_CONF_PATH/domopi.d" ]; then
@@ -1276,7 +1281,7 @@ echo $@
 		if ! $IS_VIRTUAL ; then
 
 			# Read schema
-			_domopi_file_open $MODULES_CONF_FILE
+			_domopi_file_open "$MODULES_CONF_FILE"
 			fd=$?	# Non usato direttamente
 			[ $fd -eq 255 ] && return 1
 			#$DOMOPI_SCHEMA_NAME
@@ -2363,6 +2368,117 @@ function domopi_fetch()
 }
 
 
+##
+#
+#	Imposta il sistema ad uno stato noto
+#
+#	Senza parametri pone a default gli stati dei sensori
+#	Il parametro è il file di configurazione da utilizzare
+#	per ripristinare lo stato dei sensori. Il filenon viene alterato
+#
+#	Utilizzabile anche per ripristinare uno stato noto definito da
+#	una configurazione salvata
+#	Il file di configurazione usato deve esistere e con gli stessi
+#	sensori di quello running
+#
+#	Ogni device provvede al proprio riavvio?
+#
+#	$1 - File configurazione (opzionale)
+#
+#	@author Andrea Tassotti
+#
+public domopi_reset
+function domopi_reset()
+{
+	local fd
+	local ret=1
+	local UUID=$DOMOPI_IDENT_UUID	# local device
+	local MODULES_CONF_FILE="$DOMOPI_EXTENDED_CONF_PATH/${DOMOPI_MODULES_CONF%%.$DOMOPI_CONF_EXTENTION}-${UUID}.$DOMOPI_CONF_EXTENTION" 
+
+	if [ $# -eq 0 ]; then
+	# Reset configuration to default state
+	#
+	
+	# Read schema
+		_domopi_file_open "$MODULES_CONF_FILE"
+		fd=$?	# Non usato direttamente
+		[ $fd -eq 255 ] && return 1
+
+		_domopi_select_row -q "$MODULES_CONF_FILE" defaultstate wiredpi used=true >/dev/null
+		
+		_domopi_file_close $fd
+
+		# Il file di configurazione deve esistere inizializzato
+		# Read schema
+		_domopi_file_open "$DOMOPI_GLOBAL_CONF"
+		fd=$?	# Non usato direttamente
+		[ $fd -eq 255 ] && return 1
+
+		for idx in ${!DOMOPI_wiredpi[@]}
+		do
+			_domopi_update_row -v "$DOMOPI_GLOBAL_CONF" currentstate:${DOMOPI_defaultstate[$idx]} wiredpi=${DOMOPI_wiredpi[$idx]}
+		done
+		_domopi_file_close $fd
+	else
+		# Reset sensor out to known state
+
+		# Read schema
+		_domopi_file_open "$1"
+		fd=$?	# Non usato direttamente
+		[ $fd -eq 255 ] && return 1
+
+		# Per consentire di utilizzare la medesima interfaccia callback
+		# resettiamo per stati diversi
+		_domopi_select_row -q "$1" device sensorID wiredpi patchin=null currentstate=0 > /dev/null
+		${DOMOPI_PRE_TRANSITION_CALLBACK:-true} 0
+		${DOMOPI_POST_TRANSITION_CALLBACK:-true} 0
+
+		_domopi_select_row -q "$1" device sensorID wiredpi patchin=null currentstate=1 > /dev/null
+		${DOMOPI_PRE_TRANSITION_CALLBACK:-true} 1
+		${DOMOPI_POST_TRANSITION_CALLBACK:-true} 1
+		_domopi_file_close $fd
+	fi
+}
+
+
+##
+#	Realizza le fasi di bootstrap del sistema
+#
+#	In particolare esegue reset dei sensori e pone
+#	file marcatore che deve essere rimosso allo shutdown.
+#	La mancata rimozione di tale file indica un powerfail.
+#
+#	in caso di accensione normale pone a default lo stato dei sensori eseguendo domopi_reset senza parametri
+#	in caso di powerfail ripristina lo stato dei sensori all'ultimo stato noto eseguendo domopi_reset con il file di configurazione running.
+#
+#	@author Andrea Tassotti
+#
+public domopi_poweron
+function domopi_poweron()
+{
+	if [ -f "$DOMOPI_POWERON_FILE" ]
+	then
+		# Powerfail
+		domopi_reset "$DOMOPI_GLOBAL_CONF"
+	else
+		domopi_reset
+	fi
+	touch "$DOMOPI_POWERON_FILE"
+}
+
+
+
+##
+#	Esegue le procedure per lo spegnimento del sistema
+#	Indica un corretto spegnimento al sistema durante il poweron
+#
+#	@author Andrea Tassotti
+#
+public domopi_shutdown
+function domopi_shutdown()
+{
+	rm -f "$DOMOPI_POWERON_FILE"
+}
 
 #-----------------------------------------------
 # End-of-API
