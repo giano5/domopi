@@ -31,6 +31,7 @@ process_USR1() {
 
 process_TERM() {
 	# ATTENZIONE! SIGPIPE implica anche SIGTERM
+	# Usiamo variabile SHUTDOWN per evitare loop tra segnali
 	! $SHUTDOWN && kill -s SIGPIPE $(cat $PIDFILE_BASEPATH/domod.pid)
 	[ -n "$CHILDPID" ] && kill $CHILDPID
 	rm $PIDFILE_BASEPATH/domod.pid
