@@ -1077,6 +1077,7 @@ function domopi_notice()
 #
 #	@author Andrea Tassotti
 #
+public domopi_ident
 function domopi_ident()
 {
 	_domopi_file_open $DOMOPI_IDENT_FILE
@@ -2311,10 +2312,32 @@ function domopi_get_sensors_of_group()
 
 
 ##
+#
+#
+#	@author Andrea Tassotti
+#
+function _domopi_toggle_state()
+{
+	[[ $1 -eq 0 ]] && return 1
+	return 0
+}
+
+
+##
 #	Poll for states of a list of sensors
 #
 #	Da eseguire con cadenza definita da progetto hardware.	
 #	Curiosità: Il nome deriva dalla primitiva di sistema Unix omonima
+#
+#	Supporto intettuttori (memoria di stato fisica)
+#	Supporto pulsanti (memoria di stato software)
+#
+#	Gestito mediante tipo sensore:
+#		*SWITCH -> interruttore
+#		*PUSH	-> pulsante
+#
+#	TODO:	Ridefinire domopi_create() e altri metodi
+#			per identificazione nuovi tipi sensore
 #
 #	Write in DOMOPI_PIPE
 #
@@ -2330,17 +2353,36 @@ function domopi_select()
 	[ $fd -eq 255 ] && return 1
 
 
-	_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" wiredpi currentstate device="$UUID" patchin=!null wiredpi=!null >/dev/null
+	_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" wiredpi currentstate device="$UUID" type patchin=!null wiredpi=!null >/dev/null
 
 	
 	for idx in ${!DOMOPI_wiredpi[@]}
 	do
 		# Deve restituire il nuovo stato
 		${DOMOPI_POLL_CALLBACK:-true} ${DOMOPI_wiredpi[$idx]}
-		newState=$?
-		if [ $newState -ne ${DOMOPI_currentstate[$idx]} ] ; then
-			echo ${DOMOPI_wiredpi[$idx]} $newState >$DOMOPI_PIPE
-		fi
+		hwstate=$?
+
+#		if [[ ${DOMOPI_type[$idx]} =~ SWITCH$ ]]
+#		then
+#			if [ $newState -ne ${DOMOPI_currentstate[$idx]} ] ; then
+#				echo ${DOMOPI_wiredpi[$idx]} $newState none >$DOMOPI_PIPE
+#			fi
+#		elif [[ ${DOMOPI_type[$idx]} =~ PUSH$ ]]
+#		then
+			if [ $hwstate -eq 0 ] ; then
+				if [[ ${DOMOPI_pushed[$idx]} -ne 1 ]]; then
+					# Push down
+					_domopi_toggle_state $hwstate
+					newState = $?
+					# supporting modifier
+					echo ${DOMOPI_wiredpi[$idx]} $newState none >$DOMOPI_PIPE
+					DOMOPI_pushed[$idx]=1
+				fi
+			else
+				# Push up
+				DOMOPI_pushed[$idx]=0
+			fi	
+#		fi
 	done 
 
 	_domopi_file_close $fd
@@ -2362,9 +2404,8 @@ function domopi_fetch()
 {
 	[ ! -p $DOMOPI_PIPE ] && return 1
 
-	read wiredpi state < $DOMOPI_PIPE
-echo $wiredpi $state >>/tmp/domod.debug 
-	domopi_set_state -w $wiredpi $state >>/tmp/domod.debug # >/dev/null
+	read wiredpi state modifier < $DOMOPI_PIPE
+	domopi_set_state -w $wiredpi $state >/dev/null
 	echo $?	# Numero transazioni derivanti
 
 	return 0

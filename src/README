@@ -13,13 +13,30 @@ per guidarvi alle fasi successive.
 
 Atttuale interfaccia disponibile:
 
-domopi_init
-domopi_ident
-domopi_create (parziale)
-domopi_get_state
-domopi_set_state
-domopi_get_wirepi
-
+	domopi_create()
+	domopi_destroy()
+	domopi_fetch()
+	domopi_get_description()
+	domopi_get_groups()
+	domopi_get_patch()
+	domopi_get_sensors_of_group()
+	domopi_get_state()
+	domopi_get_type()
+	domopi_get_wiredpi()
+	domopi_group_add_sensor()
+	domopi_group_remove_sensor()
+	domopi_help()
+	domopi_ident()
+	domopi_init()
+	domopi_install()
+	domopi_list()
+	domopi_man()
+	domopi_modify()
+	domopi_poweron()
+	domopi_reset()
+	domopi_select()
+	domopi_set_state()
+	domopi_shutdown()
 
 PER UN ESEMPIO VEDERE:
 test.sh
