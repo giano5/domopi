@@ -1,0 +1,18 @@
+Prima installazione framework.
+
+Come utente amministratore eseguire:
+
+. domopi.functions
+domopi_install
+
+Questo genera nel percorso previsto lo scheletro del file
+di configurazione hardware.
+Compilarlo rispetto all'hardware disponibile.
+
+
+La procedura di generazione della configurazione utente
+verrà eseguita da metodo domopi_init, ma ha bisogno di
+input utente (Il nome dell'unità configurata, tipicamente
+un nome con connessinoe topologica come "Casa", "Giardino", ecc).
+
+
