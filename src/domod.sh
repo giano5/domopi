@@ -123,7 +123,7 @@ shift
 #	-m il file dei moduli (DOMOPI_CONF_TEMPLATE_PATH)
 #	-L libreria domopi (DOMOPI_API_PATH)
 #	Queste devono eseguire overriding configurazione
-#	default cablatain domopi.functions
+#	default cablata in domopi.functions
 #
 if [ -f /etc/default/domopi ]
 then
