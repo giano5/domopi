@@ -110,7 +110,9 @@ function init()
 #
 #
 		domopi_init "$NAME"
-		domopi_notice 'Opeazione conclusa con successo'
+		[ $? -eq 0 ] &&
+			domopi_notice 'Opeazione conclusa con successo' ||
+			domopi_notice 'Opeazione conclusa con errore'
 	else
 		echo "Utilizzo file global.cfg esistente"
 		echo
@@ -137,6 +139,7 @@ function select_tipo()
 		echo "  6 - PULSE"
 		echo "  7 - Virtual SWITCH"
 		echo "  8 - Group SWITCH"
+		echo "  9 - Group PUSH"
 		echo -n "Scegli: "
 		read
 		case "$REPLY" in
@@ -148,6 +151,7 @@ function select_tipo()
 		6) TIPO="PULSE"	;;
 		7) TIPO="VSWITCH"	;;
 		8) TIPO="GSWITCH"	;;
+		9) TIPO="GPUSH"	;;
 		*)
 			;;
 		esac
@@ -179,7 +183,7 @@ function create()
 
 		select_tipo
 
-		if [ $TIPO != "GSWITCH" ]; then
+		if [ $TIPO != "GSWITCH" ] && [ $TIPO != "GPUSH" ] ; then
 		read -ep "Patch number (lasciare vuoto se non usato): " PATCH
 
 		read -ep "Si vuole creare il sensore in un gruppo?: "
@@ -188,17 +192,13 @@ function create()
 			fi
 		fi
 	
-		if [ $TIPO != "VSWITCH" ] && [ $TIPO != "GSWITCH"] ; then
-		read -ep "WiredPI number (lascare vuoto per automatico): " WIRED
-		fi
-
-		if [ $TIPO == "GSWITCH" ]; then
-		read -ep "WiredPI number (lascare vuoto per virtuale): " WIRED
+		if [ $TIPO != "VSWITCH" ] && [ $TIPO != "GSWITCH" ] && [ $TIPO != "GPUSH" ] ; then
+		read -ep "WiredPI number (lasciare vuoto per automatico): " WIRED
 		fi
 
 
-		if [ $TIPO = "GSWITCH" ]; then
-		read -ep "Si sta creando uno switch di gruppo; indicare id di gruppo: " GROUPID
+		if [ $TIPO == "GSWITCH" ] || [ $TIPO == "GPUSH" ]; then
+		read -ep "Si sta creando uno switch/push di gruppo; indicare id di gruppo: " GROUPID
 		fi
 
 		domopi_timer_start create

@@ -1,8 +1,29 @@
-Interaccia pubblica disponibile.
+INSTALLAZIONE
 
-Iniziare con:
+sudo make install
+
+
+DEMONE GESTIONE
+
+Avviare come
+
+sudo /usr/local/bin/domod.sh
+
+
+CONFIGURAZIONE:
+
+Utilizzare programma:
+
+sudo ./test.sh
+
+
+
+API : SVILUPPO e TEST
+
+Caricare da cartella repository:
 
 . domopi.functions
+
 
 Saranno disponibili i comandi
 
@@ -11,7 +32,7 @@ domopi_man
 
 per guidarvi alle fasi successive.
 
-Atttuale interfaccia disponibile:
+Attuale interfaccia disponibile:
 
 	domopi_create()
 	domopi_destroy()

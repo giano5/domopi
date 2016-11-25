@@ -24,41 +24,20 @@
 #	 @author: Andrea Tassotti
 #
 
-# Global variables
-
-# Production
-#DOMOPI_CONF_PATH=/usr/local/etc/
-# Development
-DOMOPI_CONF_PATH=.
-
-# Production
-#DOMOPI_CONF_TEMPLATE_PATH=/usr/local/var/lib/domopi
-# Development
-DOMOPI_CONF_TEMPLATE_PATH=.
-
-# Production
-#DOMOPI_BIN_PATH=/usr/local/bin
-# Development
-DOMOPI_BIN_PATH=.
-
-# Percorso istallazione di questo file (ad uso interno)
-# Production
-#DOMOPI_API_PATH=/usr/local/libexec/domopi.functions
-# Development
-DOMOPI_API_PATH=domopi.functions
-
-
-# Production
-#DOMOPI_PIPE_PATH=/usr/local/var/run/domopi.states
-#DOMOPI_PIPE=$DOMOPI_PIPE_PATH/domopi.states
-# Development
-DOMOPI_PIPE_PATH=/tmp
-DOMOPI_PIPE=$DOMOPI_PIPE_PATH/domopi.states
-
-# Deve essere un percorso scrivibile da utente esecutore 
-# Deve essere un percorso persistente quindi su disco reale
-DOMOPI_POWERON_PATH=/var/run/domopi
-DOMOPI_POWERON_FILE=$DOMOPI_POWERON_PATH/poweron
+if [ -f /etc/default/domopi ]
+then
+	. /etc/default/domopi
+else
+	# Global variables (Development)
+	DOMOPI_CONF_PATH=.
+	DOMOPI_CONF_TEMPLATE_PATH=.
+	DOMOPI_BIN_PATH=.
+	DOMOPI_API_PATH=.
+	DOMOPI_PIPE_PATH=/tmp
+	DOMOPI_PIPE=$DOMOPI_PIPE_PATH/domopi.states
+	DOMOPI_POWERON_PATH=/var/run/domopi
+	DOMOPI_POWERON_FILE=$DOMOPI_POWERON_PATH/poweron
+fi
 
 
 
@@ -69,7 +48,7 @@ else
 fi
 
 # Requisiti
-DOMOPI_REQUIRES="awk bc cut egrep grep sed tr"
+DOMOPI_REQUIRES="awk bc cut egrep grep sed tr id"
 
 declare -A DOMOPI_FILE_SCHEMA
 
@@ -101,19 +80,7 @@ DOMOPI_FILE_DESCRIPTORS[1]=opened
 DOMOPI_FILE_DESCRIPTORS[2]=opened
 
 unset DOMOPI_PUBLIC_FUNC_LIST
-unset DOMOPI_PRIVATE_FUNC_LIST
 
-
-# Internal use only
-#
-#	Make private function declaration (as C++, PHP, or other languages)
-#	Private means "Not available as command"
-#
-#function private()
-#{
-#	DOMOPI_PRIVATE_FUNC_LIST="$DOMOPI_PRIVATE_FUNC_LIST $@"
-#	return 0
-#}
 
 # Internal use only
 # NOTE: Analogamente si poterbbe costruire una lista di funzioni definite public
@@ -1004,7 +971,7 @@ function domopi_help()
 public domopi_man
 function domopi_man()
 {
-[ -f $DOMOPI_API_PATH ] &&
+[ -f $DOMOPI_API_PATH/domopi.functions ] &&
 /usr/bin/awk '
 /^##/				{ incomment=1; insummary=1; text=""; getline; }
 /^#[[:blank:]]*$/	{ insummary=0; getline; }
@@ -1014,7 +981,7 @@ function domopi_man()
 /^#[[:blank:]]*[\@]see/ { if (incomment) { insummary=0; s=""; for(i=3;i<=NF;i++) s=s$i" "; see[length(see)]=s; next; } }
 /^#.*[\$][0-9\?]+/	{ if (incomment) { par=""; for(i=2;i<=NF;i++) par=par" "$i; h[$2]=par; next; } }
 /^function /		{ if ( incomment && $2 == "'"$1()"'" ) { print "Funzione   : "$2; print "Sommario   : "summary; print "Descrizione: "text; print "Autore     : "author; for(v in note) print "Nota       : "note[v]; for(v in see) print "Vedi       : "see[v]; print "Parametri  :"; for(v in h) print h[v]; print "Opzioni    :"; for(v in o) print o[v]    ; print ""; } incomment=0; insummary=0; delete h; delete o; delete note; delete see; text=""; next; }
-					{ if ( incomment ) { if ( insummary ) { text=""; summary=""; for(i=2;i<=NF;i++) summary=summary$i" "; } else { if (NF>2){ for(i=2;i<=NF;i++) text=text$i" "; text=text"\n\t"; } } } } ' $DOMOPI_API_PATH
+					{ if ( incomment ) { if ( insummary ) { text=""; summary=""; for(i=2;i<=NF;i++) summary=summary$i" "; } else { if (NF>2){ for(i=2;i<=NF;i++) text=text$i" "; text=text"\n\t"; } } } } ' $DOMOPI_API_PATH/domopi.functions
 }
 
 
@@ -1139,6 +1106,8 @@ function domopi_init()
 	echo "ident: $1" >>$DOMOPI_IDENT_FILE
 	echo "uuid: $UUID" >>$DOMOPI_IDENT_FILE
 	echo "created: $(date +%s)" >>$DOMOPI_IDENT_FILE
+	# Incompatibile con aperturafile BASH: da rendere successivamente
+	#chmod 444 $DOMOPI_IDENT_FILE
 
 	# Generate global configuration file (empty with schema)
 	echo "$DOMOPI_FILE_FINGERPRINT" '$global$' >$DOMOPI_GLOBAL_CONF
@@ -1146,6 +1115,8 @@ function domopi_init()
 
 	# Install exportable version
 	cp "$DOMOPI_CONF_TEMPLATE_PATH/$DOMOPI_MODULES_CONF" "$DOMOPI_EXTENDED_CONF_PATH/${DOMOPI_MODULES_CONF%%.$DOMOPI_CONF_EXTENTION}-$UUID.$DOMOPI_CONF_EXTENTION"
+	chmod u+w "$DOMOPI_EXTENDED_CONF_PATH/${DOMOPI_MODULES_CONF%%.$DOMOPI_CONF_EXTENTION}-$UUID.$DOMOPI_CONF_EXTENTION"
+
 
 	# Reboot API
 	[ -f $DOMOPI_IDENT_FILE ] && domopi_ident 
@@ -1162,12 +1133,21 @@ function domopi_init()
 public domopi_install
 function domopi_install
 {
+	if [ "$(id -un)" != "root" ];
+	then
+		echo "ERROR: sorry! Only root can install." >&2
+		return 1
+	fi
+
 	if [ ! -f "$DOMOPI_CONF_TEMPLATE_PATH/$DOMOPI_MODULES_CONF" ]; then
-		# Generate global configuration file (empty with schema)
+		echo "Generate global configuration file (empty with schema) ..."
 		echo "$DOMOPI_FILE_FINGERPRINT" '$modules$' >$DOMOPI_CONF_TEMPLATE_PATH/$DOMOPI_MODULES_CONF
 		echo "${DOMOPI_FILE_SCHEMA['modules']}" >>$DOMOPI_CONF_TEMPLATE_PATH/$DOMOPI_MODULES_CONF
+
+		echo Now available at $DOMOPI_CONF_TEMPLATE_PATH/$DOMOPI_MODULES_CONF
+		echo Compile before use API
 	else
-		echo "ERROR: hardware configuration exists." >&2
+		echo "ERROR: hardware configuration exists in $DOMOPI_CONF_TEMPLATE_PATH." >&2
 		return 2
 	fi
 }
@@ -1185,10 +1165,10 @@ function domopi_install
 #	$2 - name
 #
 #	-d device UUID
-#	-g groupid TODO
+#	-g groupid 
 #	-p <patchNumber>
-#	-t <type>	TODO: letto dal file di struttura
-#	-w <wiredPI>	TODO: letto dal file di struttura
+#	-t <type>
+#	-w <wiredPI> x for null (force virtual)
 #
 #	@author Andrea Tassotti
 #
@@ -1222,8 +1202,6 @@ function domopi_create()
 	done
 	shift $((OPTIND-1))
 
-echo $@
-
 	MODULES_CONF_FILE="$DOMOPI_EXTENDED_CONF_PATH/${DOMOPI_MODULES_CONF%%.$DOMOPI_CONF_EXTENTION}-${UUID}.$DOMOPI_CONF_EXTENTION" 
 
 	if [ ! -f "$MODULES_CONF_FILE" ]; then
@@ -1242,7 +1220,7 @@ echo $@
 		"NOLIGHT")
 			[ -n "$PATCHNUMBER" ] && PATCH="patchout:$PATCHNUMBER" 
 			;;
-		"SWITCH")
+		"PUSH"|"SWITCH")
 			[ -n "$PATCHNUMBER" ] && PATCH="patchin:$PATCHNUMBER" 
 			;;
 		"VSWITCH")
@@ -1258,16 +1236,15 @@ echo $@
 		"PULSE")
 			[ -n "$PATCHNUMBER" ] && PATCH="patchin:$PATCHNUMBER" 
 			;;
-		"GSWITCH")
-			IS_VIRTUAL=false
+		"GPUSH"|"GSWITCH")
+			[[ "$WIREDPI" == "x" ]] && IS_VIRTUAL=true
 			DEFAULTSTATE=0
 			if [ -n "$PATCHNUMBER" ] ; then
-				echo 'ERROR: group switch *must* not have patch and wiredpi number' >&2 
+				echo 'ERROR: group push/switch *must* not have patch number' >&2 
 				return 1
 			fi
-			[ -z "$WIREPI" ] && IS_VIRTUAL=true
 			if [ -z "$GROUPID" ]; then
-				echo 'ERROR: group switch *must* have groupid. Use -g' >&2 
+				echo 'ERROR: group push/switch *must* have groupid. Use -g' >&2 
 				return 1
 			fi
 			;;
@@ -1281,7 +1258,6 @@ echo $@
 
 		## un virtual switch non wiredpi
 		if ! $IS_VIRTUAL ; then
-
 			# Read schema
 			_domopi_file_open "$MODULES_CONF_FILE"
 			fd=$?	# Non usato direttamente
@@ -1426,7 +1402,7 @@ function domopi_modify()
 		"NOLIGHT")
 			[ -n "$2" ] && PATCH="patchout:$2" 
 			;;
-		"SWITCH")
+		"PUSH"|"SWITCH")
 			[ -n "$2" ] && PATCH="patchin:$2" 
 			;;
 		"VSWITCH")
@@ -1450,8 +1426,9 @@ function domopi_modify()
 
 		case "$1" in
 		patch)
-			if [ "${DOMOPI_type[$row]}" = "GSWITCH" ]; then
-				echo ERROR: cannot use patch in Group Switch >&2
+			if [ "${DOMOPI_type[$row]}" = "GPUSH" ] ||
+			   [ "${DOMOPI_type[$row]}" = "GSWITCH" ]; then
+				echo ERROR: cannot use patch in Group Push/Switch >&2
 				return 2
 			fi
 
@@ -1521,7 +1498,7 @@ function domopi_get_patch()
 		"NOLIGHT")
 			echo ${DOMOPI_patchout[$row]}
 			;;
-		"SWITCH")
+		"PUSH"|"SWITCH")
 			echo ${DOMOPI_patchin[$row]}
 			;;
 		"ALARM")
@@ -1804,7 +1781,8 @@ echo $type $patchnumber
 	# No transition
 	[[ $2 = ${DOMOPI_currentstate[0]} ]] && echo No transition && _domopi_file_close $fd && return 2
 
-	if [[ "$type" = "GSWITCH" ]]; then
+	if [[ "$type" = "GPUSH" ]] ||
+	   [[ "$type" = "GSWITCH" ]]; then
 		echo "Transizione stato per i gruppi: $groups"
 		IN=""
 		for group in $groups
@@ -1815,7 +1793,7 @@ echo $type $patchnumber
 		# Imposta lo stato a tutti gli elementi nel gruppo; 
 		# se nel gruppo sono presenti altri sensori in con patch number,
 		# questi propagano tramite transizione per patch (comando a cascata).
-		# i GSWITCH non hanno per costruzione un patch number
+		# gli GPUSH e GSWITCH non hanno per costruzione un patch number
 
 		# Propagation
 		_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" device sensorID type wiredpi patchin groups="$IN" >/dev/null
@@ -2336,8 +2314,6 @@ function _domopi_toggle_state()
 #		*SWITCH -> interruttore
 #		*PUSH	-> pulsante
 #
-#	TODO:	Ridefinire domopi_create() e altri metodi
-#			per identificazione nuovi tipi sensore
 #
 #	Write in DOMOPI_PIPE
 #
@@ -2362,13 +2338,13 @@ function domopi_select()
 		${DOMOPI_POLL_CALLBACK:-true} ${DOMOPI_wiredpi[$idx]}
 		hwstate=$?
 
-#		if [[ ${DOMOPI_type[$idx]} =~ SWITCH$ ]]
-#		then
-#			if [ $newState -ne ${DOMOPI_currentstate[$idx]} ] ; then
-#				echo ${DOMOPI_wiredpi[$idx]} $newState none >$DOMOPI_PIPE
-#			fi
-#		elif [[ ${DOMOPI_type[$idx]} =~ PUSH$ ]]
-#		then
+		if [[ ${DOMOPI_type[$idx]} =~ SWITCH$ ]]
+		then
+			if [ $newState -ne ${DOMOPI_currentstate[$idx]} ] ; then
+				echo ${DOMOPI_wiredpi[$idx]} $newState none >$DOMOPI_PIPE
+			fi
+		elif [[ ${DOMOPI_type[$idx]} =~ PUSH$ ]]
+		then
 			if [ $hwstate -eq 0 ] ; then
 				if [[ ${DOMOPI_pushed[$idx]} -ne 1 ]]; then
 					# Push down
@@ -2382,7 +2358,7 @@ function domopi_select()
 				# Push up
 				DOMOPI_pushed[$idx]=0
 			fi	
-#		fi
+		fi
 	done 
 
 	_domopi_file_close $fd
@@ -2539,17 +2515,6 @@ shopt -s extglob
 
 [ ! -d $DOMOPI_PIPE_PATH ] && mkdir -p $DOMOPI_PIPE_PATH
 [ ! -p $DOMOPI_PIPE ] && mkfifo $DOMOPI_PIPE
-
-
-# Make private internal function
-#
-for f in $DOMOPI_PRIVATE_FUNC_LIST
-do
-	echo DEBUG. unsetting $f
-	unset $f
-done
-unset private
-unset $DOMOPI_PRIVATE_FUNC_LIST
 
 
 #

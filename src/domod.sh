@@ -125,8 +125,13 @@ shift
 #	Queste devono eseguire overriding configurazione
 #	default cablatain domopi.functions
 #
-DOMOPI_API_PATH=/home/andrea/repo/domopi/src
-source $DOMOPI_API_PATH/domopi.functions
+if [ -f /etc/default/domopi ]
+then
+	. /etc/default/domopi
+else
+	DOMOPI_API_PATH=~/repo/domopi/src
+	source $DOMOPI_API_PATH/domopi.functions
+fi
 
 DOMOPI_PRE_TRANSITION_CALLBACK=run_callback
 DOMOPI_GROUP_PRE_TRANSITION_CALLBACK=group_callback

@@ -3,3 +3,5 @@ usleep: usleep.c
 
 install: usleep
 	cp usleep /usr/bin
+	./install.sh
+	
