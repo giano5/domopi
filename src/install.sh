@@ -41,18 +41,20 @@ chown $DOMOPI_USER $DOMOPI_PIPE_PATH $DOMOPI_CONF_PATH $DOMOPI_POWERON_PATH
 
 install --mode 555 domopi.functions $DOMOPI_API_PATH
 install --mode 555 domod.sh $DOMOPI_BIN_PATH
-if [ ! -f modules.cfg ]
-then
-	echo "ERROR: Missing hardware configuration template."
-	echo "Please use "
-	echo 
-	echo ". domopi.functions"
-	echo "domopi_install"
-	echo
-	echo "for generate modules.cfg in current directory."
-	exit 1
+if [ ! -f $DOMOPI_CONF_TEMPLATE_PATH/modules.cfg ]; then
+	if [ ! -f modules.cfg ] ; then
+		echo "ERROR: Missing hardware configuration template."
+		echo "Please use "
+		echo 
+		echo ". domopi.functions"
+		echo "domopi_install"
+		echo
+		echo "for generate modules.cfg in current directory."
+		exit 1
+	else
+		install --mode 444 modules.cfg $DOMOPI_CONF_TEMPLATE_PATH
+	fi
 fi
-install --mode 444 modules.cfg $DOMOPI_CONF_TEMPLATE_PATH
 
 
 
