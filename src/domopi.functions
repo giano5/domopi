@@ -24,21 +24,18 @@
 #	 @author: Andrea Tassotti
 #
 
-if [ -f /etc/default/domopi ]
-then
-	. /etc/default/domopi
-else
-	# Global variables (Development)
-	DOMOPI_CONF_PATH=.
-	DOMOPI_CONF_TEMPLATE_PATH=.
-	DOMOPI_BIN_PATH=.
-	DOMOPI_API_PATH=.
-	DOMOPI_PIPE_PATH=/tmp
-	DOMOPI_PIPE=$DOMOPI_PIPE_PATH/domopi.states
-	DOMOPI_POWERON_PATH=/var/run/domopi
-	DOMOPI_POWERON_FILE=$DOMOPI_POWERON_PATH/poweron
-fi
+# Global variables (Development)
+DOMOPI_CONF_PATH=.
+DOMOPI_CONF_TEMPLATE_PATH=.
+DOMOPI_BIN_PATH=.
+DOMOPI_API_PATH=.
+DOMOPI_PIPE_PATH=/tmp
+DOMOPI_PIPE=$DOMOPI_PIPE_PATH/domopi.states
+DOMOPI_POWERON_PATH=/var/run/domopi
+DOMOPI_POWERON_FILE=$DOMOPI_POWERON_PATH/poweron
 
+[ -f /usr/local/etc/default/domopi ] && . /usr/local/etc/default/domopi
+[ -f /etc/default/domopi ] && . /etc/default/domopi
 
 
 if [ -d "$DOMOPI_CONF_PATH/domopi.d" ]; then
@@ -1133,9 +1130,9 @@ function domopi_init()
 public domopi_install
 function domopi_install
 {
-	if [ "$(id -un)" != "root" ];
+	if [ "$(id -un)" != "$DOMOPI_USER" ];
 	then
-		echo "ERROR: sorry! Only root can install." >&2
+		echo "ERROR: sorry! Only $DOMOPI_USER can install hardware configuration." >&2
 		return 1
 	fi
 
@@ -1145,7 +1142,9 @@ function domopi_install
 		echo "${DOMOPI_FILE_SCHEMA['modules']}" >>$DOMOPI_CONF_TEMPLATE_PATH/$DOMOPI_MODULES_CONF
 
 		echo Now available at $DOMOPI_CONF_TEMPLATE_PATH/$DOMOPI_MODULES_CONF
-		echo Compile before use API
+		echo
+		echo "!!! Compile it before use API !!!"
+		echo
 	else
 		echo "ERROR: hardware configuration exists in $DOMOPI_CONF_TEMPLATE_PATH." >&2
 		return 2
@@ -2498,6 +2497,40 @@ public domopi_shutdown
 function domopi_shutdown()
 {
 	rm -f "$DOMOPI_POWERON_FILE"
+}
+
+
+##
+#	Mostra il contenuto del file master
+#
+#	@author Andrea Tassotti
+#
+public domopi_show_hardware
+function domopi_show_hardware()
+{
+	local MODULES_CONF_FILE
+	local UUID=$DOMOPI_IDENT_UUID   # local device
+
+	MODULES_CONF_FILE="$DOMOPI_EXTENDED_CONF_PATH/${DOMOPI_MODULES_CONF%%.$DOMOPI_CONF_EXTENTION}-${UUID}.$DOMOPI_CONF_EXTENTION" 
+
+	if [ ! -f "$MODULES_CONF_FILE" ]; then
+		echo "ERROR: hardware running configuration missing." >&2
+		return 2
+	fi
+	echo "NOTICE: selected $MODULES_CONF_FILE" >&2
+
+	echo 
+	# Read schema
+	_domopi_file_open "$MODULES_CONF_FILE"
+	fd=$?	# Non usato direttamente
+	[ $fd -eq 255 ] && return 1
+	#$DOMOPI_SCHEMA_NAME
+
+	if [ -z "$WIREDPI" ]; then
+		_domopi_select_row "$MODULES_CONF_FILE" modulename type wiredpi used 
+	fi
+
+	_domopi_file_close $fd
 }
 
 #-----------------------------------------------

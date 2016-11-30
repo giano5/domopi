@@ -125,13 +125,10 @@ shift
 #	Queste devono eseguire overriding configurazione
 #	default cablata in domopi.functions
 #
-if [ -f /etc/default/domopi ]
-then
-	. /etc/default/domopi
-else
-	DOMOPI_API_PATH=~/repo/domopi/src
-	source $DOMOPI_API_PATH/domopi.functions
-fi
+[ -f /usr/local/etc/default/domopi ] && . /usr/local/etc/default/domopi
+[ -f /etc/default/domopi ] && . /etc/default/domopi
+
+source $DOMOPI_API_PATH/domopi.functions
 
 DOMOPI_PRE_TRANSITION_CALLBACK=run_callback
 DOMOPI_GROUP_PRE_TRANSITION_CALLBACK=group_callback

@@ -58,6 +58,7 @@ Attuale interfaccia disponibile:
 	domopi_select()
 	domopi_set_state()
 	domopi_shutdown()
+	domopi_show_hardware()
 
 PER UN ESEMPIO VEDERE:
 test.sh

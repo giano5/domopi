@@ -1,4 +1,4 @@
-bin/bash
+#!/bin/bash
 
 COLOR_BLUE='\033[34m'
 COLOR_RED='\033[1;31m'
@@ -318,7 +318,7 @@ function header()
 function master_page()
 {
 	header
-	echo '[ 1] - Inizializzazione e configurazioni'
+	echo '[ 1] - Inizializzazione e hardware'
 	echo '[ 2] - Creazione sensore'
 	echo "[ 3] - Modifica sensore"
 	echo '[ 4] - Creazione gruppo'
@@ -336,7 +336,6 @@ function master_page()
 
 function master_page_1()
 {
-	init
 	CURRENT_PAGE="init_page $CURRENT_PAGE" 
 }
 
@@ -455,14 +454,14 @@ function master_page_13()
 {
 	echo Si pone in ascolto tutti gli input per attuare gli stati
 	echo "Running ..."
-	domopi_notice	NON IMPLEMENTATO
+	domopi_notice	NON IMPLEMENTATO: Usare domod.sh
 }
 
 function init_page()
 {
 	header
 	echo '[1] - Rimuovi identità esistente'
-	echo '[2] - Lista sensori'
+	echo '[2] - Lista sensori disponibili in hardware'
 	echo "[3] - Cambia riferimento in $IDOWIRED_NEXT (attuale: $IDOWIRED)"
 	echo '[q] - Indietro'
 }
@@ -475,7 +474,8 @@ function init_page_1()
 
 function init_page_2()
 {
-	list
+	domopi_show_hardware | more
+	domopi_notice
 }
 
 function init_page_3()
