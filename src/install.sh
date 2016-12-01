@@ -36,11 +36,18 @@ EOT
 
 . /usr/local/etc/default/domopi
 
-mkdir -p $DOMOPI_CONF_TEMPLATE_PATH $DOMOPI_BIN_PATH $DOMOPI_BIN_PATH $DOMOPI_API_PATH $DOMOPI_CONF_PATH $DOMOPI_POWERON_PATH $DOMOPI_PIPE_PATH
+mkdir -p $DOMOPI_CONF_TEMPLATE_PATH $DOMOPI_BIN_PATH $DOMOPI_BIN_PATH $DOMOPI_API_PATH $DOMOPI_CONF_PATH $DOMOPI_POWERON_PATH 
 
 # Trattiamo come una cartella tmp in attesa di definire utenti e gruppi
 # che possano condividere questo medesimo spazio
-chmod ugo+trwx $DOMOPI_PIPE_PATH
+if [ ! -d $DOMOPI_PIPE_PATH ]; then
+	mkdir -p $DOMOPI_PIPE_PATH
+	chmod ugo+trwx $DOMOPI_PIPE_PATH
+else
+	echo
+	echo "WARNING: $DOMOPI_PIPE_PATH exists!!!"
+	echo Check write permission for user $RUN_AS_USER.
+fi
 
 chown $DOMOPI_USER $DOMOPI_CONF_PATH $DOMOPI_POWERON_PATH
 
@@ -48,6 +55,7 @@ install --mode 555 domopi.functions $DOMOPI_API_PATH
 install --mode 555 domod.sh $DOMOPI_BIN_PATH
 if [ ! -f $DOMOPI_CONF_TEMPLATE_PATH/modules.cfg ]; then
 	if [ ! -f modules.cfg ] ; then
+		echo
 		echo "ERROR: Missing hardware configuration template."
 		echo "Please use "
 		echo 
