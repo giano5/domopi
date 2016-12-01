@@ -36,8 +36,13 @@ EOT
 
 . /usr/local/etc/default/domopi
 
-mkdir -p $DOMOPI_CONF_TEMPLATE_PATH $DOMOPI_BIN_PATH $DOMOPI_BIN_PATH $DOMOPI_API_PATH $DOMOPI_CONF_PATH $DOMOPI_POWERON_PATH
-chown $DOMOPI_USER $DOMOPI_PIPE_PATH $DOMOPI_CONF_PATH $DOMOPI_POWERON_PATH
+mkdir -p $DOMOPI_CONF_TEMPLATE_PATH $DOMOPI_BIN_PATH $DOMOPI_BIN_PATH $DOMOPI_API_PATH $DOMOPI_CONF_PATH $DOMOPI_POWERON_PATH $DOMOPI_PIPE_PATH
+
+# Trattiamo come una cartella tmp in attesa di definire utenti e gruppi
+# che possano condividere questo medesimo spazio
+chmod ugo+trwx $DOMOPI_PIPE_PATH
+
+chown $DOMOPI_USER $DOMOPI_CONF_PATH $DOMOPI_POWERON_PATH
 
 install --mode 555 domopi.functions $DOMOPI_API_PATH
 install --mode 555 domod.sh $DOMOPI_BIN_PATH

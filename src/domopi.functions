@@ -2546,7 +2546,7 @@ shopt -s expand_aliases
 shopt -s extglob 
 [ -f $DOMOPI_IDENT_FILE ] && domopi_ident 
 
-[ ! -d $DOMOPI_PIPE_PATH ] && mkdir -p $DOMOPI_PIPE_PATH
+[ ! -d $DOMOPI_PIPE_PATH ] && echo "FATAL: no such directory: $DOMOPI_PIPE_PATH" >&2 && exit 1
 [ ! -p $DOMOPI_PIPE ] && mkfifo $DOMOPI_PIPE
 
 
