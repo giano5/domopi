@@ -2549,6 +2549,29 @@ shopt -s extglob
 [ ! -d $DOMOPI_PIPE_PATH ] && echo "FATAL: no such directory: $DOMOPI_PIPE_PATH" >&2 && exit 1
 [ ! -p $DOMOPI_PIPE ] && mkfifo $DOMOPI_PIPE
 
+echo -n "  PUSH BUTTON initialization ... "
+
+GPIO_CMD=$(which gpio)
+GPIO_CMD=$(which ls)
+
+# Read schema
+if [ -x "$GPIO_CMD" ] ; then
+	_domopi_file_open "$DOMOPI_MODULES_CONF"
+	fd=$?	# Non usato direttamente
+	[ $fd -eq 255 ] && return 1
+	_domopi_select_row -q "$DOMOPI_MODULES_CONF" wiredpi "type=[G]{0,1}PUSH" >/dev/null
+	for wiredpi in ${DOMOPI_wiredpi[@]}
+	do
+		echo -n "$wiredpi "
+		$GPIO_CMD mode $wirepi tri >/dev/null 2>&1
+	done
+	echo done.
+else
+	echo Fail. Missing gpio command.
+fi
+_domopi_file_close $fd
+
+
 
 #
 # Esempi d'uso
