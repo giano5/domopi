@@ -10,6 +10,12 @@ CLOCK_COLOR='\033[1;39;44m'
 . domopi.functions
 shopt >opt.prog
 
+function shutdown()
+{
+	echo Shutdown
+	SHUTDOWN_THREAD=true
+}
+
 # Show running clock
 #
 #	ATTENZIONE! Eseguire prima di impostare TRAP segnali
@@ -65,8 +71,10 @@ function test_callback()
 	for index in ${!DOMOPI_wiredpi[@]}
 	do
 		# NOTA: rimuovere echo per eseguire
-		[ "$UUID" = "${DOMOPI_device[$index]}" ] && 
+		if [ "$UUID" = "${DOMOPI_device[$index]}" ]; then
 			echo gpio write ${DOMOPI_wiredpi[$index]} $1
+			gpio write ${DOMOPI_wiredpi[$index]} $1
+		fi
 	done
 }
 
@@ -82,11 +90,10 @@ function test_callback_group()
 function test_callback_poll()
 {
 	newState=0
-	if [ -n "$1" ]; then
-		# NOTA: commentare o rimuovere per rendere operativo
-		newState=0
-		# NOTA: rimuovere commento per rendere operativo
-		#newState=$( gpio read $1 )
+	if [ -n "$1" ] ; then
+		echo -n "gpio read $1: "
+		newState=$( gpio read $1 )
+		echo "letto stato ${newState:-NULL (gpio installato?)}"
 	fi
 	return $newState
 }
@@ -134,24 +141,26 @@ function select_tipo()
 		echo "  1 - LIGHT"
 		echo "  2 - NOLIGHT"
 		echo "  3 - SWITCH"
-		echo "  4 - ALARM"
-		echo "  5 - OTHER"
-		echo "  6 - PULSE"
-		echo "  7 - Virtual SWITCH"
-		echo "  8 - Group SWITCH"
-		echo "  9 - Group PUSH"
+		echo "  4 - PUSH"
+		echo "  5 - ALARM"
+		echo "  6 - OTHER"
+		echo "  7 - PULSE"
+		echo "  8 - Virtual SWITCH"
+		echo "  9 - Group SWITCH"
+		echo "  0 - Group PUSH"
 		echo -n "Scegli: "
 		read
 		case "$REPLY" in
 		1) TIPO="LIGHT"	;;
 		2) TIPO="NOLIGHT"	;;
 		3) TIPO="SWITCH"	;;
-		4) TIPO="ALARM"	;;
-		5) TIPO="OTHER"	;;
-		6) TIPO="PULSE"	;;
-		7) TIPO="VSWITCH"	;;
-		8) TIPO="GSWITCH"	;;
-		9) TIPO="GPUSH"	;;
+		4) TIPO="PUSH"	;;
+		5) TIPO="ALARM"	;;
+		6) TIPO="OTHER"	;;
+		7) TIPO="PULSE"	;;
+		8) TIPO="VSWITCH"	;;
+		9) TIPO="GSWITCH"	;;
+		0) TIPO="GPUSH"	;;
 		*)
 			;;
 		esac
@@ -453,8 +462,17 @@ function master_page_12()
 function master_page_13()
 {
 	echo Si pone in ascolto tutti gli input per attuare gli stati
-	echo "Running ..."
-	domopi_notice	NON IMPLEMENTATO: Usare domod.sh
+	echo Premere invio per iniziare. CRTL+C per terminare
+	read
+	echo "Polling (${POLL_TIME:-0.1} sec) ..."
+	SHUTDOWN_THREAD=false
+	trap shutdown 1 2 3 15
+	while ! $SHUTDOWN_THREAD; do
+		domopi_select 2>/dev/null
+		sleep ${POLL_TIME:-0.1}
+	done
+	domopi_notice
+	return 0
 }
 
 function init_page()

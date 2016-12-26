@@ -180,9 +180,8 @@ function poll_callback()
 # Thread 1: In realtà child
 (
 	while true; do
-		domopi_select
-		#sleep 1	# Troppo ritardo ?
-		usleep 500000	# Numero pid utilizzati aumenta in modo elevato
+		domopi_select 2>/dev/null
+		sleep 0.1
 	done
 ) &
 CHILDPID=$!
