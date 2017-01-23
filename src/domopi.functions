@@ -2552,7 +2552,6 @@ shopt -s extglob
 echo -n "  PUSH BUTTON initialization ... "
 
 GPIO_CMD=$(which gpio)
-GPIO_CMD=$(which ls)
 
 # Read schema
 if [ -x "$GPIO_CMD" ] ; then
