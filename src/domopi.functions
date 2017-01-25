@@ -187,7 +187,7 @@ function _domopi_file_open
 
 	_get_file_descriptor
 	fd=$?
-	eval "exec $fd<> \"$1\""
+	eval "exec $fd<> \"$1\"" 2>/dev/null
 
 	if [ $? -eq 0 ]; then
 	# validate fingerprint
@@ -1137,7 +1137,8 @@ function domopi_install
 	fi
 
 	if [ ! -f "$DOMOPI_CONF_TEMPLATE_PATH/$DOMOPI_MODULES_CONF" ]; then
-		echo "Generate global configuration file (empty with schema) ..."
+		local DOMOPI_CONF_TEMPLATE_PATH=.
+		echo "Generate global configuration file (empty with schema) for installation in local path ..."
 		echo "$DOMOPI_FILE_FINGERPRINT" '$modules$' >$DOMOPI_CONF_TEMPLATE_PATH/$DOMOPI_MODULES_CONF
 		echo "${DOMOPI_FILE_SCHEMA['modules']}" >>$DOMOPI_CONF_TEMPLATE_PATH/$DOMOPI_MODULES_CONF
 
@@ -2555,10 +2556,10 @@ GPIO_CMD=$(which gpio)
 
 # Read schema
 if [ -x "$GPIO_CMD" ] ; then
-	_domopi_file_open "$DOMOPI_MODULES_CONF"
+	_domopi_file_open "$DOMOPI_CONF_TEMPLATE_PATH/$DOMOPI_MODULES_CONF"
 	fd=$?	# Non usato direttamente
 	[ $fd -eq 255 ] && return 1
-	_domopi_select_row -q "$DOMOPI_MODULES_CONF" wiredpi "type=[G]{0,1}PUSH" >/dev/null
+	_domopi_select_row -q "$DOMOPI_CONF_TEMPLATE_PATH/$DOMOPI_MODULES_CONF" wiredpi "type=[G]{0,1}PUSH" >/dev/null
 	for wiredpi in ${DOMOPI_wiredpi[@]}
 	do
 		echo -n "$wiredpi "
