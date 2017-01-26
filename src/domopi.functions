@@ -170,6 +170,8 @@ function _release_file_descriptor()
 #	$1 - File name
 #	$2 - (optional)fingerprint schema extension
 #
+#	-r	readonly open
+#
 #	return file descriptor id or 255 if any error
 #	
 #
@@ -179,7 +181,14 @@ function _release_file_descriptor()
 function _domopi_file_open
 {
 	local SCHEMA
+	local readonly=false
 	unset DOMOPI_SCHEMA_NAME
+
+	if [[ "$1" = '-r' ]]; then
+		readonly=true
+		shift
+	fi
+
 	if [ ! -f "$1" ] ; then
 		echo "FATAL: $1: No such file!" >&2
 		return 255
@@ -187,7 +196,11 @@ function _domopi_file_open
 
 	_get_file_descriptor
 	fd=$?
-	eval "exec $fd<> \"$1\"" 2>/dev/null
+	if $readonly; then
+		eval "exec $fd< \"$1\"" #2>/dev/null
+	else
+		eval "exec $fd<> \"$1\"" #2>/dev/null
+	fi
 
 	if [ $? -eq 0 ]; then
 	# validate fingerprint
@@ -1405,6 +1418,8 @@ function domopi_modify()
 		"PUSH"|"SWITCH")
 			[ -n "$2" ] && PATCH="patchin:$2" 
 			;;
+		#"GPUSH"|"GSWITCH")
+		#	;; Non hanno patch
 		"VSWITCH")
 			[ -n "$2" ] && PATCH="patchin:$2" 
 			;;
@@ -1631,7 +1646,7 @@ function domopi_destroy()
 	# Allineamento allocazione wiredpi
 
 	# Read schema modules
-	_domopi_file_open $MODULES_CONF_FILE
+	_domopi_file_open "$MODULES_CONF_FILE"
 	fd=$?	# Non usato direttamente
 	[ $fd -eq 255 ] && return 1
 
@@ -2550,26 +2565,54 @@ shopt -s extglob
 [ ! -d $DOMOPI_PIPE_PATH ] && echo "FATAL: no such directory: $DOMOPI_PIPE_PATH" >&2 && exit 1
 [ ! -p $DOMOPI_PIPE ] && mkfifo $DOMOPI_PIPE
 
+UUID=$DOMOPI_IDENT_UUID	# local device
+MODULES_CONF_FILE="$DOMOPI_EXTENDED_CONF_PATH/${DOMOPI_MODULES_CONF%%.$DOMOPI_CONF_EXTENTION}-${UUID}.$DOMOPI_CONF_EXTENTION" 
+
 echo -n "  PUSH BUTTON initialization ... "
 
 GPIO_CMD=$(which gpio)
 
 # Read schema
 if [ -x "$GPIO_CMD" ] ; then
-	_domopi_file_open "$DOMOPI_CONF_TEMPLATE_PATH/$DOMOPI_MODULES_CONF"
+
+	_domopi_file_open "$MODULES_CONF_FILE" 
 	fd=$?	# Non usato direttamente
 	[ $fd -eq 255 ] && return 1
-	_domopi_select_row -q "$DOMOPI_CONF_TEMPLATE_PATH/$DOMOPI_MODULES_CONF" wiredpi "type=[G]{0,1}PUSH" >/dev/null
-	for wiredpi in ${DOMOPI_wiredpi[@]}
+	_domopi_select_row -q "$MODULES_CONF_FILE" wiredpi type >/dev/null
+	for row in ${!DOMOPI_wiredpi[@]}
+	#for wiredpi in ${DOMOPI_wiredpi[@]}
 	do
-		echo -n "$wiredpi "
-		$GPIO_CMD mode $wirepi tri >/dev/null 2>&1
+		case "${DOMOPI_type[$row]}" in
+		"LIGHT")
+			$GPIO_CMD mode ${DOMOPI_wiredpi[$row]} out >/dev/null 2>&1
+			;;
+		"NOLIGHT")
+			;;
+		"PUSH"|"GPUSH")
+			$GPIO_CMD mode ${DOMOPI_wiredpi[$row]} tri >/dev/null 2>&1
+			;;
+		"SWITCH"|"GSWITCH")
+			$GPIO_CMD mode ${DOMOPI_wiredpi[$row]} in >/dev/null 2>&1
+			;;
+		"VSWITCH")
+			;;
+		"ALARM")
+			;;
+		"OTHER")
+			;;
+		"PULSE")
+			;;
+		*)
+			;;
+		esac
+
 	done
 	echo done.
 else
 	echo Fail. Missing gpio command.
 fi
 _domopi_file_close $fd
+unset MODULES_CONF_FILE
 
 
 
