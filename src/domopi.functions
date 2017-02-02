@@ -60,12 +60,12 @@ DOMOPI_FILE_FINGERPRINT='# Automatically generatedfile: do not modify!'
 # Schemas is for generate initial configuration
 
 # Logical configuration
-DOMOPI_FILE_SCHEMA['global']='# groupID:device:sensorID:patchin:patchout:wiredpi:type:mode:maxexecutiontime:order:currentstate:descriptionU:alias:groups'
+DOMOPI_FILE_SCHEMA['global']='# groupID:device:sensorID:patchin:patchout:wiredpi:type:mode:maxexecutiontime:order:currentstate:descriptionU:alias:groups:'
 # NOTA: In caso di bash < 4.2 dichiarare a questo livello
 #declare -A DOMOPI_SCHEMA_COL_global
 
 # Physical configuration
-DOMOPI_FILE_SCHEMA['modules']='# modulename:defaultstate:inverse:wiredpi:type:used'
+DOMOPI_FILE_SCHEMA['modules']='# modulename:defaultstate:inverse:wiredpi:type:used:'
 # NOTA: In caso di bash < 4.2 dichiarare a questo livello
 #declare -A DOMOPI_SCHEMA_COL_modules
 
@@ -2560,59 +2560,61 @@ function domopi_show_hardware()
 echo DomoPI API bootstrap ...
 shopt -s expand_aliases 
 shopt -s extglob 
-[ -f $DOMOPI_IDENT_FILE ] && domopi_ident 
 
 [ ! -d $DOMOPI_PIPE_PATH ] && echo "FATAL: no such directory: $DOMOPI_PIPE_PATH" >&2 && exit 1
 [ ! -p $DOMOPI_PIPE ] && mkfifo $DOMOPI_PIPE
 
-UUID=$DOMOPI_IDENT_UUID	# local device
-MODULES_CONF_FILE="$DOMOPI_EXTENDED_CONF_PATH/${DOMOPI_MODULES_CONF%%.$DOMOPI_CONF_EXTENTION}-${UUID}.$DOMOPI_CONF_EXTENTION" 
+if [ -f $DOMOPI_IDENT_FILE ] ; then
+	domopi_ident 
+	UUID=$DOMOPI_IDENT_UUID	# local device
+	MODULES_CONF_FILE="$DOMOPI_EXTENDED_CONF_PATH/${DOMOPI_MODULES_CONF%%.$DOMOPI_CONF_EXTENTION}-${UUID}.$DOMOPI_CONF_EXTENTION" 
 
-echo -n "  PUSH BUTTON initialization ... "
+	echo -n "  PUSH BUTTON initialization ... "
 
-GPIO_CMD=$(which gpio)
+	GPIO_CMD=$(which gpio)
 
-# Read schema
-if [ -x "$GPIO_CMD" ] ; then
+	# Read schema
+	if [ -x "$GPIO_CMD" ] ; then
+		_domopi_file_open "$MODULES_CONF_FILE" 
+		fd=$?	# Non usato direttamente
+		[ $fd -eq 255 ] && return 1
 
-	_domopi_file_open "$MODULES_CONF_FILE" 
-	fd=$?	# Non usato direttamente
-	[ $fd -eq 255 ] && return 1
-	_domopi_select_row -q "$MODULES_CONF_FILE" wiredpi type >/dev/null
-	for row in ${!DOMOPI_wiredpi[@]}
-	#for wiredpi in ${DOMOPI_wiredpi[@]}
-	do
-		case "${DOMOPI_type[$row]}" in
-		"LIGHT")
-			$GPIO_CMD mode ${DOMOPI_wiredpi[$row]} out >/dev/null 2>&1
-			;;
-		"NOLIGHT")
-			;;
-		"PUSH"|"GPUSH")
-			$GPIO_CMD mode ${DOMOPI_wiredpi[$row]} tri >/dev/null 2>&1
-			;;
-		"SWITCH"|"GSWITCH")
-			$GPIO_CMD mode ${DOMOPI_wiredpi[$row]} in >/dev/null 2>&1
-			;;
-		"VSWITCH")
-			;;
-		"ALARM")
-			;;
-		"OTHER")
-			;;
-		"PULSE")
-			;;
-		*)
-			;;
-		esac
+		_domopi_select_row -q "$MODULES_CONF_FILE" wiredpi type >/dev/null
 
-	done
-	echo done.
-else
-	echo Fail. Missing gpio command.
+		for row in ${!DOMOPI_wiredpi[@]}
+		do
+			case "${DOMOPI_type[$row]}" in
+			"LIGHT")
+				$GPIO_CMD mode ${DOMOPI_wiredpi[$row]} out >/dev/null 2>&1
+				;;
+			"NOLIGHT")
+				;;
+			"PUSH"|"GPUSH")
+				$GPIO_CMD mode ${DOMOPI_wiredpi[$row]} tri >/dev/null 2>&1
+				;;
+			"SWITCH"|"GSWITCH")
+				$GPIO_CMD mode ${DOMOPI_wiredpi[$row]} in >/dev/null 2>&1
+				;;
+			"VSWITCH")
+				;;
+			"ALARM")
+				;;
+			"OTHER")
+				;;
+			"PULSE")
+				;;
+			*)
+				;;
+			esac
+
+		done
+		echo done.
+	else
+		echo Fail. Missing gpio command.
+	fi
+	_domopi_file_close $fd
+	unset MODULES_CONF_FILE
 fi
-_domopi_file_close $fd
-unset MODULES_CONF_FILE
 
 
 

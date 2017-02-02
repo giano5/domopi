@@ -1,4 +1,7 @@
 #!/bin/bash
+#
+#	@author Andrea Tassotti
+#
 
 COLOR_BLUE='\033[34m'
 COLOR_RED='\033[1;31m'
@@ -6,8 +9,11 @@ COLOR_RESET='\033[0m'
 TITLE_COLOR='\033[1;39;46m'
 CLOCK_COLOR='\033[1;39;44m'
 
-# Indicare eventuale altro percorso
-. domopi.functions
+# Produzione
+. /usr/local/libexec/domopi.functions
+# Development
+# . domopi.functions
+
 shopt >opt.prog
 
 function shutdown()

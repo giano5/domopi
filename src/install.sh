@@ -54,7 +54,7 @@ chown $DOMOPI_USER $DOMOPI_CONF_PATH $DOMOPI_POWERON_PATH
 install --mode 555 domopi.functions $DOMOPI_API_PATH
 install --mode 555 domod.sh $DOMOPI_BIN_PATH
 if [ ! -f $DOMOPI_CONF_TEMPLATE_PATH/modules.cfg ]; then
-	if [ ! -f modules.cfg ] ; then
+	if [ ! -f $PWD/modules.cfg ] ; then
 		echo
 		echo "ERROR: Missing hardware configuration template."
 		echo "Please use "
@@ -65,7 +65,7 @@ if [ ! -f $DOMOPI_CONF_TEMPLATE_PATH/modules.cfg ]; then
 		echo "for generate modules.cfg in current directory."
 		exit 1
 	else
-		install --mode 444 modules.cfg $DOMOPI_CONF_TEMPLATE_PATH
+		install --mode 444 $PWD/modules.cfg $DOMOPI_CONF_TEMPLATE_PATH
 	fi
 fi
 
@@ -76,6 +76,7 @@ fi
 #
 if [ ! -f $DOMOPI_CONF_PATH/ident.cfg ]; then
 	# Scegliere un nome
+	echo First configuration: initialize identity: execute as $RUN_AS_USER
 	su - $RUN_AS_USER -c '. /usr/local/etc/default/domopi ; . $DOMOPI_API_PATH/domopi.functions; domopi_init TESTBOX'
 fi
 
