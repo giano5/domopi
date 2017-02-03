@@ -12,7 +12,7 @@ CLOCK_COLOR='\033[1;39;44m'
 # Produzione
 . /usr/local/libexec/domopi.functions
 # Development
-# . domopi.functions
+#. domopi.functions
 
 shopt >opt.prog
 
@@ -97,9 +97,9 @@ function test_callback_poll()
 {
 	newState=0
 	if [ -n "$1" ] ; then
-		echo -n "gpio read $1: "
+		#echo -n "gpio read $1: "
 		newState=$( gpio read $1 )
-		echo "letto stato ${newState:-NULL (gpio installato?)}"
+		#echo "letto stato ${newState:-NULL (gpio installato?)}"
 	fi
 	return $newState
 }
@@ -474,7 +474,7 @@ function master_page_13()
 	SHUTDOWN_THREAD=false
 	trap shutdown 1 2 3 15
 	while ! $SHUTDOWN_THREAD; do
-		domopi_select 2>/dev/null
+		domopi_select -q # 2>/dev/null
 		sleep ${POLL_TIME:-0.1}
 	done
 	domopi_notice

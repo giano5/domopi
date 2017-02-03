@@ -138,7 +138,8 @@ function no_spaces()
 function _get_file_descriptor()
 {
 	local i
-	for((i=0;i<${#DOMOPI_FILE_DESCRIPTORS};i++))
+
+	for((i=0;i<254;i++))
 	do
 		if [[ ${DOMOPI_FILE_DESCRIPTORS[$i]} != 'opened' ]]
 		then
@@ -146,6 +147,7 @@ function _get_file_descriptor()
 			return $i
 		fi
 	done
+
 	return 255
 }
 
@@ -196,6 +198,11 @@ function _domopi_file_open
 
 	_get_file_descriptor
 	fd=$?
+	if [ $fd -eq 255 ]; then
+		echo "FATAL: No more file descriptors availables!" >&2
+		return 255
+	fi
+
 	if $readonly; then
 		eval "exec $fd< \"$1\"" #2>/dev/null
 	else
@@ -207,7 +214,7 @@ function _domopi_file_open
 		IFS='$' read FINGERPRINT SCHEMA <&$fd
 		if [ "$(rtrim $FINGERPRINT)" != "$DOMOPI_FILE_FINGERPRINT" ]
 		then
-			echo "FATAL: Not a DOMOPI file!" >&2
+			echo "FATAL: $1: Not a DOMOPI file!" >&2
 			echo $FINGERPRINT
 			_domopi_file_close $fd
 			return 255
@@ -1854,7 +1861,8 @@ echo $type $patchnumber
 	local patch
 	for((_idx=0;_idx<${#DOMOPI_currentstate[@]};_idx++))
 	do
-		if [ ${DOMOPI_currentstate[$_idx]} -eq 0 ]; then
+		## TODO: Attensione: arriva un non integer !!!
+		if [[ ${DOMOPI_currentstate[$_idx]} -eq 0 ]]; then
 			patch=${DOMOPI_patchout[$_idx]}
 			[ -z "${stateoff[$patch]}" ] && stateoff[$patch]=0
 			stateoff[$patch]=$(( ${stateoff[$patch]} + 1 ))
@@ -2332,21 +2340,24 @@ function _domopi_toggle_state()
 #
 #	Write in DOMOPI_PIPE
 #
+#	-q - Quite mode. Do not write in DOMOPI_PIPE
+#
 #	@author Andrea Tassotti
 #
 public domopi_select
 function domopi_select()
 {
 	local UUID=$DOMOPI_IDENT_UUID   # local device
+	local OUT=$DOMOPI_PIPE
+
+	[[ "$1" = "-q" ]] && OUT=/dev/null
 
 	_domopi_file_open "$DOMOPI_GLOBAL_CONF"
 	fd=$?	# Non usato direttamente
 	[ $fd -eq 255 ] && return 1
 
-
 	_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" wiredpi currentstate device="$UUID" type patchin=!null wiredpi=!null >/dev/null
 
-	
 	for idx in ${!DOMOPI_wiredpi[@]}
 	do
 		# Deve restituire il nuovo stato
@@ -2356,17 +2367,26 @@ function domopi_select()
 		if [[ ${DOMOPI_type[$idx]} =~ SWITCH$ ]]
 		then
 			if [ $newState -ne ${DOMOPI_currentstate[$idx]} ] ; then
-				echo ${DOMOPI_wiredpi[$idx]} $newState none >$DOMOPI_PIPE
+
+				# Quiet mode == debug mode
+				[[ "$1" = "-q" ]] && echo New state $newState from ${DOMOPI_currentstate[$idx]} for SWITCH wiredpi ${DOMOPI_wiredpi[$idx]} && domopi_set_state -w ${DOMOPI_wiredpi[$idx]} $newState >/dev/null
+
+				echo ${DOMOPI_wiredpi[$idx]} $newState none >$OUT
 			fi
 		elif [[ ${DOMOPI_type[$idx]} =~ PUSH$ ]]
 		then
-			if [ $hwstate -eq 0 ] ; then
+# TODO: Per pulsanti a logica invertita occorre variare 1 con 0
+			if [ $hwstate -eq 1 ] ; then
 				if [[ ${DOMOPI_pushed[$idx]} -ne 1 ]]; then
 					# Push down
-					_domopi_toggle_state $hwstate
+					_domopi_toggle_state ${DOMOPI_currentstate[$idx]}
 					newState=$?
-					# supporting modifier
-					echo ${DOMOPI_wiredpi[$idx]} $newState none >$DOMOPI_PIPE 
+
+					# Quiet mode == debug mode
+					[[ "$1" = "-q" ]] && echo New state $newState from ${DOMOPI_currentstate[$idx]} for PUSH wiredpi ${DOMOPI_wiredpi[$idx]} && domopi_set_state -w ${DOMOPI_wiredpi[$idx]} $newState >/dev/null
+
+					# supporting modifier with field 3
+					echo ${DOMOPI_wiredpi[$idx]} $newState none >$OUT 
 					DOMOPI_pushed[$idx]=1
 				fi
 			else
