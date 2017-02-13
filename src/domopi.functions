@@ -2610,6 +2610,7 @@ if [ -f $DOMOPI_IDENT_FILE ] ; then
 			"NOLIGHT")
 				;;
 			"PUSH"|"GPUSH")
+				$GPIO_CMD mode ${DOMOPI_wiredpi[$row]} in >/dev/null 2>&1
 				$GPIO_CMD mode ${DOMOPI_wiredpi[$row]} tri >/dev/null 2>&1
 				;;
 			"SWITCH"|"GSWITCH")
