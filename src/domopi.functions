@@ -1291,7 +1291,7 @@ function domopi_create()
 				read WIREDPI REST <<< "${DOMOPI_wiredpi[@]}"
 				if [ -z "$WIREDPI" ] && [ "$TYPE" != "VSWITCH" ]
 				then
-					echo "ERROR: no more wiredpi available on device $UUID" >&2
+					echo "ERROR: no more wiredpi available for type $TYPE on device $UUID" >&2
 					_domopi_file_close $fd
 					return 1
 				fi

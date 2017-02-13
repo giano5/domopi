@@ -202,8 +202,8 @@ function create()
 		read -ep "Patch number (lasciare vuoto se non usato): " PATCH
 
 		read -ep "Si vuole creare il sensore in un gruppo?: "
-			if [ $REPLY = 'y' -o $REPLY = 'Y' -o $REPLY = 's' -o $REPLY = 'S' ]; then
-			read -ep -n "ID gruppo: " GROUPID
+			if [ "$REPLY" = 'y' -o "$REPLY" = 'Y' -o "$REPLY" = 's' -o "$REPLY" = 'S' ]; then
+			read -ep "ID gruppo: " GROUPID
 			fi
 		fi
 	
