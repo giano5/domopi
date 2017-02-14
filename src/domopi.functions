@@ -212,10 +212,17 @@ function _domopi_file_open
 	if [ $? -eq 0 ]; then
 	# validate fingerprint
 		IFS='$' read FINGERPRINT SCHEMA <&$fd
+
+		if [ -n "$DEBUG" ]; then
+			echo "Opening: $1"
+			echo "Fingerprint:'$(rtrim $FINGERPRINT)' (must be: '$DOMOPI_FILE_FINGERPRINT')"
+			echo -n "Schema: '$SCHEMA' "
+			[ -n "$2" ] && echo "(must be: '$2')" || echo
+		fi
+
 		if [ "$(rtrim $FINGERPRINT)" != "$DOMOPI_FILE_FINGERPRINT" ]
 		then
 			echo "FATAL: $1: Not a DOMOPI file!" >&2
-			echo $FINGERPRINT
 			_domopi_file_close $fd
 			return 255
 		fi
@@ -432,9 +439,9 @@ function _domopi_desc()
 function _domopi_select_row()
 {
 	local VERBOSE=false
-	DELIMITER="\t"
-	HEADER=true
-	FOOTER=true
+	local DELIMITER="\t"
+	local HEADER=true
+	local FOOTER=true
 
 	[ -z "$DOMOPI_SCHEMA_NAME" ] && echo schema missing >&2 && return 1
 
@@ -564,7 +571,7 @@ function _domopi_select_row()
 		done
 		echo
 		echo 
-		fi	> $SPOOL
+		fi > $SPOOL
 
 		# Impossibile costrutto pipe: deve generare variabili globali
 # TODO: ulteriore miglioramento rimuovendo cut eprocessando cut_fields tramite selezione su array row
@@ -575,6 +582,7 @@ function _domopi_select_row()
 			IFS=: read -a row <<< "$row"
 			local c=0
 			c=0
+			[[ $row =~ ^# ]] && continue
 
 			# Output ordinato
 			for pos in ${!posizioni[@]}
@@ -2562,6 +2570,7 @@ function domopi_show_hardware()
 	[ $fd -eq 255 ] && return 1
 	#$DOMOPI_SCHEMA_NAME
 
+	echo
 	if [ -z "$WIREDPI" ]; then
 		_domopi_select_row "$MODULES_CONF_FILE" modulename type wiredpi used 
 	fi

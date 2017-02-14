@@ -487,6 +487,7 @@ function init_page()
 	echo '[1] - Rimuovi identità esistente'
 	echo '[2] - Lista sensori disponibili in hardware'
 	echo "[3] - Cambia riferimento in $IDOWIRED_NEXT (attuale: $IDOWIRED)"
+	echo "[4] - Attiva/Disattiva DEBUG MODE (attuale: ${DEBUG:-Off})"
 	echo '[q] - Indietro'
 }
 
@@ -510,6 +511,15 @@ function init_page_3()
 	else
 		IDOWIRED="ID"
 		IDOWIRED_NEXT="WIREDPI"
+	fi
+}
+
+function init_page_4()
+{
+	if [[ $DEBUG = 'On' ]]; then
+		DEBUG=
+	else
+		DEBUG=On
 	fi
 }
 
