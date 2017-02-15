@@ -55,7 +55,7 @@ DOMOPI_IDENT_FILE=$DOMOPI_CONF_PATH/ident.$DOMOPI_CONF_EXTENTION
 DOMOPI_GLOBAL_CONF=$DOMOPI_CONF_PATH/global.$DOMOPI_CONF_EXTENTION
 DOMOPI_MODULES_CONF=modules.$DOMOPI_CONF_EXTENTION
 
-DOMOPI_FILE_FINGERPRINT='# Automatically generatedfile: do not modify!'
+DOMOPI_FILE_FINGERPRINT='# Automatically generated file: do not modify!'
 
 # Schemas is for generate initial configuration
 
