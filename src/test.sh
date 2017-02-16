@@ -14,7 +14,7 @@ CLOCK_COLOR='\033[1;39;44m'
 # Development
 #. domopi.functions
 
-shopt >opt.prog
+#shopt >opt.prog
 
 function shutdown()
 {
