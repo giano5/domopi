@@ -60,7 +60,7 @@ DOMOPI_FILE_FINGERPRINT='# Automatically generated file: do not modify!'
 # Schemas is for generate initial configuration
 
 # Logical configuration
-DOMOPI_FILE_SCHEMA['global']='# groupID:device:sensorID:patchin:patchout:wiredpi:type:mode:maxexecutiontime:order:currentstate:descriptionU:alias:groups:'
+DOMOPI_FILE_SCHEMA['global']='# groupID:device:sensorID:patchin:patchout:wiredpi:type:mode:inverse:maxexecutiontime:order:currentstate:descriptionU:alias:groups:'
 # NOTA: In caso di bash < 4.2 dichiarare a questo livello
 #declare -A DOMOPI_SCHEMA_COL_global
 
@@ -1209,6 +1209,7 @@ function domopi_create()
 	local ret
 	local device
 	local DEFAULTSTATE
+	local INVERSE
 	local WIREDPI
 	local TYPE
 	local MODULES_CONF_FILE
@@ -1293,9 +1294,11 @@ function domopi_create()
 			#$DOMOPI_SCHEMA_NAME
 
 			if [ -z "$WIREDPI" ]; then
-				_domopi_select_row -q "$MODULES_CONF_FILE" defaultstate wiredpi type=$TYPE used=false >/dev/null
+				_domopi_select_row -q "$MODULES_CONF_FILE" defaultstate inverse wiredpi type=$TYPE used=false >/dev/null
 				# Legge solo la prima risposta
 				read DEFAULTSTATE REST <<< "${DOMOPI_defaultstate[@]}"
+				read INVERSE REST <<< "${DOMOPI_inverse[@]}"
+
 				read WIREDPI REST <<< "${DOMOPI_wiredpi[@]}"
 				if [ -z "$WIREDPI" ] && [ "$TYPE" != "VSWITCH" ]
 				then
@@ -1332,11 +1335,15 @@ function domopi_create()
 			[ ${#DOMOPI_groupID[@]} -eq 0 ] && echo ERROR: domopi_create: group $GROUPID does not exists. >&2 && return 3
 		fi
 
+		if [[ $INVERSE -eq 1 ]]; then
+			domopi_toggle_state $DEFAULTSTATE
+			DEFAULTSTATE=$?
+		fi
 
 		# TODO: device potrà essere un ID sequenziale in presenza
 		#		di master.cfg che definisca il legame con UUID
 		echo "NOTICE: master.cfg ignored: device use UUID" >&2
-		_domopi_insert_row "$DOMOPI_GLOBAL_CONF" device:"$UUID" sensorID:'*' "descriptionU:$2" currentstate:"$DEFAULTSTATE" wiredpi:"$WIREDPI" type:"$TYPE" groups:"$GROUPID" "$PATCH" 
+		_domopi_insert_row "$DOMOPI_GLOBAL_CONF" device:"$UUID" sensorID:'*' "descriptionU:$2" currentstate:"$DEFAULTSTATE" inverse:"$INVERSE" wiredpi:"$WIREDPI" type:"$TYPE" groups:"$GROUPID" "$PATCH" 
 
 		# NOTA: Il vincolo di univocità sulle descrizioni impone
 		#		di alterare il nome originale.
@@ -1698,23 +1705,33 @@ function domopi_destroy()
 #	${DOMOPI_device[@]}		# Consente la trasmissione puntuale
 #	${DOMOPI_sensorID[@]}
 #	${DOMOPI_wiredpi[@]}
+#	${DOMOPI_inverse[@]}	# Informa se viene trattato come logica inversa
 #	
+#	Per i sensori a logica invertita, lo stato in configurazione
+#	viene invertito prima di fornirlo alla callback
 #
 #	@author Andrea Tassotti
 #
 function _domopi_do_sensor_transition()
 {
+	local hwstate=$2
+	# Gestione stato logico invertito
+	if [[ ${DOMOPI_inverse[$idx]} -eq 1 ]]; then
+		domopi_toggle_state $hwstate
+		hwstate=$?
+	fi
+
 	# Propagation
 	_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" device sensorID wiredpi patchout=$1 > /dev/null
 
 
-	${DOMOPI_PRE_TRANSITION_CALLBACK:-true} $2
+	${DOMOPI_PRE_TRANSITION_CALLBACK:-true} $hwstate
 
 	# Simula clausola OR con due operazioni
 	_domopi_update_row -v "$DOMOPI_GLOBAL_CONF" currentstate:$2 patchin=$1 
 	_domopi_update_row -v "$DOMOPI_GLOBAL_CONF" currentstate:$2 patchout=$1 
 
-	${DOMOPI_POST_TRANSITION_CALLBACK:-true} $2
+	${DOMOPI_POST_TRANSITION_CALLBACK:-true} $hwstate
 
 	return 0
 }
@@ -1746,9 +1763,11 @@ function _domopi_do_sensor_transition()
 #	prima di salvare la configurazione di stato: fornire nome di una
 #	funzione definita
 #	In entrambi i casi viene passato il valore del nuovo stato; sono
-#	disponibili le colonne della configurazione sensorID e wiredpi con:
+#	disponibili le colonne della configurazione sensorID, inverse e 
+#	wiredpi con:
 #	${DOMOPI_sensorID[@]}
 #	${DOMOPI_wiredpi[@]}
+#	${DOMOPI_inverse[@]}
 #
 #	Per transizioni gruppi utilizza DOMOPI_GROUP_PRE_TRANSITION_CALLBACK
 #	e DOMOPI_GROUP_POST_CALLBACK. A differenzadella callback per i sensori
@@ -2345,6 +2364,9 @@ function _domopi_toggle_state()
 #		*SWITCH -> interruttore
 #		*PUSH	-> pulsante
 #
+#	I pulsanti o switch a logica invertita vengono trattati
+#	semplicemente invertendo lo stato letto. La configurazione
+#	trascritta indica sempre con 0 off e 1 on.
 #
 #	Write in DOMOPI_PIPE
 #
@@ -2357,6 +2379,7 @@ function domopi_select()
 {
 	local UUID=$DOMOPI_IDENT_UUID   # local device
 	local OUT=$DOMOPI_PIPE
+	local hwstate
 
 	[[ "$1" = "-q" ]] && OUT=/dev/null
 
@@ -2364,13 +2387,19 @@ function domopi_select()
 	fd=$?	# Non usato direttamente
 	[ $fd -eq 255 ] && return 1
 
-	_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" wiredpi currentstate device="$UUID" type patchin=!null wiredpi=!null >/dev/null
+	_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" wiredpi currentstate inverse device="$UUID" type patchin=!null wiredpi=!null >/dev/null
 
 	for idx in ${!DOMOPI_wiredpi[@]}
 	do
 		# Deve restituire il nuovo stato
 		${DOMOPI_POLL_CALLBACK:-true} ${DOMOPI_wiredpi[$idx]}
 		hwstate=$?
+
+		# Gestione stato logico invertito
+		if [[ ${DOMOPI_inverse[$idx]} -eq 1 ]]; then
+			domopi_toggle_state $hwstate
+			hwstate=$?
+		fi
 
 		if [[ ${DOMOPI_type[$idx]} =~ SWITCH$ ]]
 		then
@@ -2383,7 +2412,6 @@ function domopi_select()
 			fi
 		elif [[ ${DOMOPI_type[$idx]} =~ PUSH$ ]]
 		then
-# TODO: Per pulsanti a logica invertita occorre variare 1 con 0
 			if [ $hwstate -eq 1 ] ; then
 				if [[ ${DOMOPI_pushed[$idx]} -ne 1 ]]; then
 					# Push down
@@ -2457,6 +2485,7 @@ function domopi_reset()
 	local ret=1
 	local UUID=$DOMOPI_IDENT_UUID	# local device
 	local MODULES_CONF_FILE="$DOMOPI_EXTENDED_CONF_PATH/${DOMOPI_MODULES_CONF%%.$DOMOPI_CONF_EXTENTION}-${UUID}.$DOMOPI_CONF_EXTENTION" 
+	local hwstate
 
 	if [ $# -eq 0 ]; then
 	# Reset configuration to default state
@@ -2492,13 +2521,19 @@ function domopi_reset()
 
 		# Per consentire di utilizzare la medesima interfaccia callback
 		# resettiamo per stati diversi
-		_domopi_select_row -q "$1" device sensorID wiredpi patchin=null currentstate=0 > /dev/null
-		${DOMOPI_PRE_TRANSITION_CALLBACK:-true} 0
-		${DOMOPI_POST_TRANSITION_CALLBACK:-true} 0
+		for hwstate in 0 1
+		do
+			_domopi_select_row -q "$1" device sensorID wiredpi inverse patchin=null currentstate=$hwstate > /dev/null
+# TODO:Iterare sulla risposta
+			# Gestione stato logico invertito
+			if [[ ${DOMOPI_inverse[$idx]} -eq 1 ]]; then
+				domopi_toggle_state $hwstate
+				hwstate=$?
+			fi
+			${DOMOPI_PRE_TRANSITION_CALLBACK:-true} $hwstate
+			${DOMOPI_POST_TRANSITION_CALLBACK:-true} $hwstate
+		done
 
-		_domopi_select_row -q "$1" device sensorID wiredpi patchin=null currentstate=1 > /dev/null
-		${DOMOPI_PRE_TRANSITION_CALLBACK:-true} 1
-		${DOMOPI_POST_TRANSITION_CALLBACK:-true} 1
 		_domopi_file_close $fd
 	fi
 }
@@ -2608,7 +2643,8 @@ if [ -f $DOMOPI_IDENT_FILE ] ; then
 		fd=$?	# Non usato direttamente
 		[ $fd -eq 255 ] && return 1
 
-		_domopi_select_row -q "$MODULES_CONF_FILE" wiredpi type >/dev/null
+		_domopi_select_row -q "$MODULES_CONF_FILE" defaultstate inverse wiredpi type >/dev/null
+
 
 		for row in ${!DOMOPI_wiredpi[@]}
 		do
