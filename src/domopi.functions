@@ -1072,7 +1072,7 @@ function domopi_notice()
 public domopi_ident
 function domopi_ident()
 {
-	_domopi_file_open $DOMOPI_IDENT_FILE
+	_domopi_file_open $DOMOPI_IDENT_FILE ident
 	fd=$?
 
 	if [ $fd -ne 255 ]
@@ -2465,7 +2465,7 @@ function domopi_fetch()
 #
 #	Senza parametri pone a default gli stati dei sensori
 #	Il parametro è il file di configurazione da utilizzare
-#	per ripristinare lo stato dei sensori. Il filenon viene alterato
+#	per ripristinare lo stato dei sensori. Il file non viene alterato
 #
 #	Utilizzabile anche per ripristinare uno stato noto definito da
 #	una configurazione salvata
@@ -2509,22 +2509,36 @@ function domopi_reset()
 		for idx in ${!DOMOPI_wiredpi[@]}
 		do
 			_domopi_update_row -v "$DOMOPI_GLOBAL_CONF" currentstate:${DOMOPI_defaultstate[$idx]} wiredpi=${DOMOPI_wiredpi[$idx]}
+			_domopi_select_row -q "$1" device sensorID wiredpi inverse patchin=null wired=${DOMOPI_wiredpi[$idx]} > /dev/null
+
+			hwstate=${DOMOPI_defaultstate[$idx]}
+			# Gestione stato logico invertito
+			if [[ ${DOMOPI_inverse[$idx]} -eq 1 ]]; then
+				domopi_toggle_state $hwstate
+				hwstate=$?
+			fi
+			${DOMOPI_PRE_TRANSITION_CALLBACK:-true} $hwstate
+			${DOMOPI_POST_TRANSITION_CALLBACK:-true} $hwstate
 		done
 		_domopi_file_close $fd
 	else
 		# Reset sensor out to known state
+		if [ "$1" = "$DOMOPI_GLOBAL_CONF" ]
+		then
+			echo "ABORT: Cannot restore configuration from running configuration!"
+			return 1
+		fi
 
 		# Read schema
 		_domopi_file_open "$1"
 		fd=$?	# Non usato direttamente
 		[ $fd -eq 255 ] && return 1
 
-		# Per consentire di utilizzare la medesima interfaccia callback
-		# resettiamo per stati diversi
-		for hwstate in 0 1
+		# Solo i sensori out (patchin=null)
+		_domopi_select_row -q "$1" device sensorID wiredpi inverse patchin=null > /dev/null
+		for idx in ${!DOMOPI_wiredpi[@]}
 		do
-			_domopi_select_row -q "$1" device sensorID wiredpi inverse patchin=null currentstate=$hwstate > /dev/null
-# TODO:Iterare sulla risposta
+			hwstate=${DOMOPI_currentstate}
 			# Gestione stato logico invertito
 			if [[ ${DOMOPI_inverse[$idx]} -eq 1 ]]; then
 				domopi_toggle_state $hwstate
