@@ -1,0 +1,28 @@
+#!/bin/sh
+set -e
+
+case "$1" in
+	configure)
+		#
+		#	Dummy configuration (for experimental environment)
+		#
+		. /usr/local/etc/default/domopi
+		mkdir -p $DOMOPI_PIPE_PATH
+		mkdir -p $DOMOPI_CONF_PATH
+		mkdir -p $DOMOPI_POWERON_PATH
+		chmod ugo+trwx $DOMOPI_PIPE_PATH
+		chown $DOMOPI_USER $DOMOPI_CONF_PATH $DOMOPI_POWERON_PATH
+
+		if [ ! -f $DOMOPI_CONF_PATH/ident.cfg ]; then
+			# Scegliere un nome
+			echo First configuration: initialize identity: execute as $DOMOPI_USER
+			su - $DOMOPI_USER -s /bin/bash -c '. /usr/local/etc/default/domopi ; . $DOMOPI_API_PATH/domopi.functions; domopi_init TESTBOX'
+		fi
+		;;
+	abort-upgrade|abort-remove|abort-deconfigure)
+		;;
+	*)
+		echo "postinst called with unknown argument \`$1'" >&2
+		exit 1
+		;;
+esac

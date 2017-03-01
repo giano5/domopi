@@ -1336,7 +1336,7 @@ function domopi_create()
 		fi
 
 		if [[ $INVERSE -eq 1 ]]; then
-			domopi_toggle_state $DEFAULTSTATE
+			_domopi_toggle_state $DEFAULTSTATE
 			DEFAULTSTATE=$?
 		fi
 
@@ -1717,7 +1717,7 @@ function _domopi_do_sensor_transition()
 	local hwstate=$2
 	# Gestione stato logico invertito
 	if [[ ${DOMOPI_inverse[$idx]} -eq 1 ]]; then
-		domopi_toggle_state $hwstate
+		_domopi_toggle_state $hwstate
 		hwstate=$?
 	fi
 
@@ -2397,7 +2397,7 @@ function domopi_select()
 
 		# Gestione stato logico invertito
 		if [[ ${DOMOPI_inverse[$idx]} -eq 1 ]]; then
-			domopi_toggle_state $hwstate
+			_domopi_toggle_state $hwstate
 			hwstate=$?
 		fi
 
@@ -2514,7 +2514,7 @@ function domopi_reset()
 			hwstate=${DOMOPI_defaultstate[$idx]}
 			# Gestione stato logico invertito
 			if [[ ${DOMOPI_inverse[$idx]} -eq 1 ]]; then
-				domopi_toggle_state $hwstate
+				_domopi_toggle_state $hwstate
 				hwstate=$?
 			fi
 			${DOMOPI_PRE_TRANSITION_CALLBACK:-true} $hwstate
@@ -2541,7 +2541,7 @@ function domopi_reset()
 			hwstate=${DOMOPI_currentstate}
 			# Gestione stato logico invertito
 			if [[ ${DOMOPI_inverse[$idx]} -eq 1 ]]; then
-				domopi_toggle_state $hwstate
+				_domopi_toggle_state $hwstate
 				hwstate=$?
 			fi
 			${DOMOPI_PRE_TRANSITION_CALLBACK:-true} $hwstate

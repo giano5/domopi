@@ -1,0 +1,9 @@
+#!/bin/sh
+set -e
+# $1: "upgrade"
+# $2: versione
+#echo esecuzione pre-installazione: argomenti: $@
+
+# Verifica esistenza utente pi
+id pi >/dev/null 2>&1
+

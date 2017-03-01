@@ -1,0 +1,5 @@
+#!/bin/sh
+set -e
+if [ \( "$1" = "upgrade" -o "$1" = "remove" \) ]; then
+	echo Esecuzione pre rimozione
+fi

@@ -1,0 +1,12 @@
+# Global variables
+
+DOMOPI_USER=pi
+DOMOPI_CONF_PATH=/usr/local/etc/domopi
+DOMOPI_CONF_TEMPLATE_PATH=/usr/local/var/lib/domopi
+DOMOPI_BIN_PATH=/usr/local/bin
+DOMOPI_API_PATH=/usr/local/libexec
+DOMOPI_PIPE_PATH=/usr/local/var/run
+DOMOPI_PIPE=$DOMOPI_PIPE_PATH/domopi.states
+# Deve essere un percorso scrivibile da utente esecutore 
+DOMOPI_POWERON_PATH=/var/run/domopi
+DOMOPI_POWERON_FILE=$DOMOPI_POWERON_PATH/poweron

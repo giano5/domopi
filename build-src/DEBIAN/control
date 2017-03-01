@@ -1,0 +1,12 @@
+Package: domopi
+Version: 1.0.1
+Section: base
+Priority: optional
+Architecture: all
+Depends: bash (>= 4.2), bc (>= 1.06.95-2)
+Suggests: package-doc
+Installed-Size: 1024
+Maintainer: Andrea Tassotti <andrea.tassotti@gmail.com>
+Homepage: http://www.domopi.it/
+Description: DomoPI
+ A domotic chip but full solution!
