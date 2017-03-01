@@ -2374,6 +2374,7 @@ function _domopi_toggle_state()
 #
 #	@author Andrea Tassotti
 #
+declare -a DOMOPI_pushed
 public domopi_select
 function domopi_select()
 {
@@ -2391,6 +2392,8 @@ function domopi_select()
 
 	for idx in ${!DOMOPI_wiredpi[@]}
 	do
+		wiredpi=${DOMOPI_wiredpi[$idx]}
+
 		# Deve restituire il nuovo stato
 		${DOMOPI_POLL_CALLBACK:-true} ${DOMOPI_wiredpi[$idx]}
 		hwstate=$?
@@ -2412,8 +2415,9 @@ function domopi_select()
 			fi
 		elif [[ ${DOMOPI_type[$idx]} =~ PUSH$ ]]
 		then
-			if [ $hwstate -eq 1 ] ; then
-				if [[ ${DOMOPI_pushed[$idx]} -ne 1 ]]; then
+			if [ $hwstate -eq ${DOMOPI_inverse[$idx]} ] ; then
+				[ -n "$DEBUG" ] && echo push DOWN ${DOMOPI_wiredpi[$idx]}
+				if [[ ${DOMOPI_pushed[$wiredpi]} -eq 0 ]]; then
 					# Push down
 					_domopi_toggle_state ${DOMOPI_currentstate[$idx]}
 					newState=$?
@@ -2423,11 +2427,12 @@ function domopi_select()
 
 					# supporting modifier with field 3
 					echo ${DOMOPI_wiredpi[$idx]} $newState none >$OUT 
-					DOMOPI_pushed[$idx]=1
+					eval "DOMOPI_pushed[$wiredpi]=1"
 				fi
 			else
 				# Push up
-				DOMOPI_pushed[$idx]=0
+				[ -n "$DEBUG" ] && echo push UP ${DOMOPI_wiredpi[$idx]}
+				eval "DOMOPI_pushed[$wiredpi]=0"
 			fi	
 		fi
 	done 
