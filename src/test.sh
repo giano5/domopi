@@ -12,7 +12,9 @@ CLOCK_COLOR='\033[1;39;44m'
 # Produzione
 . /usr/local/libexec/domopi.functions
 # Development
-#. domopi.functions
+[ -f domopi.functions ] && . domopi.functions
+
+
 
 #shopt >opt.prog
 
@@ -101,7 +103,7 @@ function test_callback_poll()
 		newState=$( gpio read $1 )
 		#echo "letto stato ${newState:-NULL (gpio installato?)}"
 	fi
-	return $newState
+	return ${newState:-0}
 }
 
 

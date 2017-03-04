@@ -204,16 +204,18 @@ function _domopi_file_open
 	fi
 
 	if $readonly; then
-		eval "exec $fd< \"$1\"" #2>/dev/null
+		eval "exec $fd< \"$1\"" 2>/dev/null
+		ret=$?
 	else
-		eval "exec $fd<> \"$1\"" #2>/dev/null
+		eval "exec $fd<> \"$1\"" 2>/dev/null
+		ret=$?
 	fi
 
-	if [ $? -eq 0 ]; then
+	if [ $ret -eq 0 ]; then
 	# validate fingerprint
 		IFS='$' read FINGERPRINT SCHEMA <&$fd
 
-		if [ -n "$DEBUG" ]; then
+		if [[ "$DEBUG" = "On" ]]; then
 			echo "Opening: $1"
 			echo "Fingerprint:'$(rtrim $FINGERPRINT)' (must be: '$DOMOPI_FILE_FINGERPRINT')"
 			echo -n "Schema: '$SCHEMA' "
@@ -254,6 +256,11 @@ function _domopi_file_open
 
 			DOMOPI_SCHEMA_NAME=$SCHEMA
 		fi
+	else
+		echo -n "FATAL: $1: Cannot open DOMOPI file " >&2
+		! $readonly && echo "for writing!" >&2
+		echo >&2
+		return 255
 	fi
 
 	return $fd
@@ -1072,7 +1079,7 @@ function domopi_notice()
 public domopi_ident
 function domopi_ident()
 {
-	_domopi_file_open $DOMOPI_IDENT_FILE ident
+	_domopi_file_open -r $DOMOPI_IDENT_FILE ident
 	fd=$?
 
 	if [ $fd -ne 255 ]
@@ -1083,6 +1090,7 @@ function domopi_ident()
 		# global/external command use
 		echo $DOMOPI_IDENT_IDENT $DOMOPI_IDENT_UUID $DOMOPI_IDENT_CREATED
 		_domopi_file_close $fd
+		return 0
 	fi
 	
 	return 1
@@ -1298,6 +1306,10 @@ function domopi_create()
 				# Legge solo la prima risposta
 				read DEFAULTSTATE REST <<< "${DOMOPI_defaultstate[@]}"
 				read INVERSE REST <<< "${DOMOPI_inverse[@]}"
+				if [ -z "$INVERSE" ]; then
+					echo "FATAL: inverse column is null" >&2
+					return 255
+				fi
 
 				read WIREDPI REST <<< "${DOMOPI_wiredpi[@]}"
 				if [ -z "$WIREDPI" ] && [ "$TYPE" != "VSWITCH" ]
@@ -1335,15 +1347,23 @@ function domopi_create()
 			[ ${#DOMOPI_groupID[@]} -eq 0 ] && echo ERROR: domopi_create: group $GROUPID does not exists. >&2 && return 3
 		fi
 
-		if [[ $INVERSE -eq 1 ]]; then
-			_domopi_toggle_state $DEFAULTSTATE
-			DEFAULTSTATE=$?
-		fi
 
 		# TODO: device potrà essere un ID sequenziale in presenza
 		#		di master.cfg che definisca il legame con UUID
 		echo "NOTICE: master.cfg ignored: device use UUID" >&2
 		_domopi_insert_row "$DOMOPI_GLOBAL_CONF" device:"$UUID" sensorID:'*' "descriptionU:$2" currentstate:"$DEFAULTSTATE" inverse:"$INVERSE" wiredpi:"$WIREDPI" type:"$TYPE" groups:"$GROUPID" "$PATCH" 
+
+		if [[ "$DEBUG" = "On" ]]; then
+			echo "DEBUG       : sensor created"
+			echo "device      : $UUID"
+			echo "description : $2"
+			echo "currentstate: $DEFAULTSTATE"
+			echo "inverse     : $INVERSE"
+			echo "wiredpi     : $WIREDPI"
+			echo "type        : $TYPE"
+			echo "groups      : $GROUPID"
+			echo "patching    : $PATCH" 
+		fi
 
 		# NOTA: Il vincolo di univocità sulle descrizioni impone
 		#		di alterare il nome originale.
@@ -2346,7 +2366,7 @@ function domopi_get_sensors_of_group()
 #
 function _domopi_toggle_state()
 {
-	[[ $1 -eq 0 ]] && return 1
+	[[ ${1:-0} -eq 0 ]] && return 1
 	return 0
 }
 
@@ -2381,6 +2401,8 @@ function domopi_select()
 	local UUID=$DOMOPI_IDENT_UUID   # local device
 	local OUT=$DOMOPI_PIPE
 	local hwstate
+	local wiredpi
+	local inverse
 
 	[[ "$1" = "-q" ]] && OUT=/dev/null
 
@@ -2393,30 +2415,35 @@ function domopi_select()
 	for idx in ${!DOMOPI_wiredpi[@]}
 	do
 		wiredpi=${DOMOPI_wiredpi[$idx]}
+		inverse=${DOMOPI_inverse[$idx]}
 
 		# Deve restituire il nuovo stato
 		${DOMOPI_POLL_CALLBACK:-true} ${DOMOPI_wiredpi[$idx]}
 		hwstate=$?
 
 		# Gestione stato logico invertito
-		if [[ ${DOMOPI_inverse[$idx]} -eq 1 ]]; then
+		if [[ ${inverse:-0} -eq 1 ]]; then
 			_domopi_toggle_state $hwstate
 			hwstate=$?
 		fi
 
 		if [[ ${DOMOPI_type[$idx]} =~ SWITCH$ ]]
 		then
-			if [ $newState -ne ${DOMOPI_currentstate[$idx]} ] ; then
+			if [[ $hwstate -ne ${DOMOPI_currentstate[$idx]} ]] ; then
 
 				# Quiet mode == debug mode
-				[[ "$1" = "-q" ]] && echo New state $newState from ${DOMOPI_currentstate[$idx]} for SWITCH wiredpi ${DOMOPI_wiredpi[$idx]} && domopi_set_state -w ${DOMOPI_wiredpi[$idx]} $newState >/dev/null
+				[[ "$1" = "-q" ]] && echo New state $hwstate from ${DOMOPI_currentstate[$idx]} for SWITCH wiredpi ${DOMOPI_wiredpi[$idx]} && domopi_set_state -w ${DOMOPI_wiredpi[$idx]} $hwstate >/dev/null
 
-				echo ${DOMOPI_wiredpi[$idx]} $newState none >$OUT
+				echo ${DOMOPI_wiredpi[$idx]} $hwstate none >$OUT
 			fi
 		elif [[ ${DOMOPI_type[$idx]} =~ PUSH$ ]]
 		then
-			if [ $hwstate -eq ${DOMOPI_inverse[$idx]} ] ; then
-				[ -n "$DEBUG" ] && echo push DOWN ${DOMOPI_wiredpi[$idx]}
+			if [ -z "$inverse" ] ; then
+				echo -ne "WARNING: inverse column is null.  \r" >&2
+			fi
+
+			if [[ $hwstate -eq ${inverse:-0} ]] ; then
+				[[ "$DEBUG" = "On" ]] && echo push DOWN ${DOMOPI_wiredpi[$idx]}
 				if [[ ${DOMOPI_pushed[$wiredpi]} -eq 0 ]]; then
 					# Push down
 					_domopi_toggle_state ${DOMOPI_currentstate[$idx]}
@@ -2431,7 +2458,7 @@ function domopi_select()
 				fi
 			else
 				# Push up
-				[ -n "$DEBUG" ] && echo push UP ${DOMOPI_wiredpi[$idx]}
+				[[ "$DEBUG" = "On" ]] && echo push UP ${DOMOPI_wiredpi[$idx]}
 				eval "DOMOPI_pushed[$wiredpi]=0"
 			fi	
 		fi
@@ -2647,8 +2674,8 @@ shopt -s extglob
 [ ! -d $DOMOPI_PIPE_PATH ] && echo "FATAL: no such directory: $DOMOPI_PIPE_PATH" >&2 && exit 1
 [ ! -p $DOMOPI_PIPE ] && mkfifo $DOMOPI_PIPE
 
-if [ -f $DOMOPI_IDENT_FILE ] ; then
-	domopi_ident 
+if [ -f $DOMOPI_IDENT_FILE ] && domopi_ident
+then
 	UUID=$DOMOPI_IDENT_UUID	# local device
 	MODULES_CONF_FILE="$DOMOPI_EXTENDED_CONF_PATH/${DOMOPI_MODULES_CONF%%.$DOMOPI_CONF_EXTENTION}-${UUID}.$DOMOPI_CONF_EXTENTION" 
 
@@ -2675,10 +2702,24 @@ if [ -f $DOMOPI_IDENT_FILE ] ; then
 				;;
 			"PUSH"|"GPUSH")
 				$GPIO_CMD mode ${DOMOPI_wiredpi[$row]} in >/dev/null 2>&1
-				$GPIO_CMD mode ${DOMOPI_wiredpi[$row]} tri >/dev/null 2>&1
+				if [[ ${DOMOPI_inverse[$row]} -eq 0 ]]; then
+					echo "Set PUSH wired ${DOMOPI_wiredpi[$row]} mode pull-down"
+					$GPIO_CMD mode ${DOMOPI_wiredpi[$row]} down >/dev/null 2>&1
+				else
+					echo "Set PUSH wired ${DOMOPI_wiredpi[$row]} mode pull-up"
+					$GPIO_CMD mode ${DOMOPI_wiredpi[$row]} up >/dev/null 2>&1
+				fi
+
 				;;
 			"SWITCH"|"GSWITCH")
 				$GPIO_CMD mode ${DOMOPI_wiredpi[$row]} in >/dev/null 2>&1
+				if [[ ${DOMOPI_inverse[$row]} -eq 0 ]]; then
+					echo "Set SWITCH wired ${DOMOPI_wiredpi[$row]} mode pull-down"
+					$GPIO_CMD mode ${DOMOPI_wiredpi[$row]} down >/dev/null 2>&1
+				else
+					echo "Set SWITCH wired ${DOMOPI_wiredpi[$row]} mode pull-up"
+					$GPIO_CMD mode ${DOMOPI_wiredpi[$row]} up >/dev/null 2>&1
+				fi
 				;;
 			"VSWITCH")
 				;;

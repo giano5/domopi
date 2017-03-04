@@ -6,6 +6,7 @@ set -e
 case "$1" in
 	purge)
 		rm /usr/local/etc/domopi/*
+		rm /usr/local/var/run/domopi.states
 		;;
 	remove|upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
 		;;
