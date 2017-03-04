@@ -1735,15 +1735,15 @@ function domopi_destroy()
 function _domopi_do_sensor_transition()
 {
 	local hwstate=$2
+
+	# Propagation
+	_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" device sensorID wiredpi inverse patchout=$1 > /dev/null
+
 	# Gestione stato logico invertito
 	if [[ ${DOMOPI_inverse[$idx]} -eq 1 ]]; then
 		_domopi_toggle_state $hwstate
 		hwstate=$?
 	fi
-
-	# Propagation
-	_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" device sensorID wiredpi patchout=$1 > /dev/null
-
 
 	${DOMOPI_PRE_TRANSITION_CALLBACK:-true} $hwstate
 
@@ -1845,7 +1845,7 @@ function domopi_set_state()
 	read patchnumber REST <<< ${DOMOPI_patchin[@]}
 	groups=${DOMOPI_groups[@]}
 
-echo $type $patchnumber
+	[[ "$DEBUG" = "On" ]] && echo $type $patchnumber
 
 	# No transition
 	[[ $2 = ${DOMOPI_currentstate[0]} ]] && echo No transition && _domopi_file_close $fd && return 2
