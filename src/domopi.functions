@@ -1750,10 +1750,11 @@ function _domopi_do_sensor_transition()
 	${DOMOPI_PRE_TRANSITION_CALLBACK:-true} $hwstate
 
 	# Simula clausola OR con due operazioni
-	echo -n "Patch-in configuration sync ... "
-	_domopi_update_row -v "$DOMOPI_GLOBAL_CONF" currentstate:$2 patchin=$1 
-	echo -n "Patch-out configuration sync ... "
-	_domopi_update_row -v "$DOMOPI_GLOBAL_CONF" currentstate:$2 patchout=$1 
+	VERBOSE='-q'
+	[[ "$DEBUG" = "On" ]] && echo -n "Patch-in configuration sync ... " && VERBOSE='-v'
+	_domopi_update_row $VERBOSE "$DOMOPI_GLOBAL_CONF" currentstate:$2 patchin=$1 
+	[[ "$DEBUG" = "On" ]] && echo -n "Patch-out configuration sync ... "
+	_domopi_update_row $VERBOSE "$DOMOPI_GLOBAL_CONF" currentstate:$2 patchout=$1 
 
 	${DOMOPI_POST_TRANSITION_CALLBACK:-true} $hwstate
 
@@ -1898,8 +1899,7 @@ function domopi_set_state()
 		ret=$?
 	fi
 
-	echo 
-	echo "Global state synchronization"
+	[[ "$DEBUG" = "On" ]] && echo  && echo "Global state synchronization"
 
 	# Sincronizzazione stati interruttori (per patch nummber)
 	declare -A stateon
@@ -1926,12 +1926,14 @@ function domopi_set_state()
 	for patch in ${!stateon[@]} ${!stateoff[@]}
 	do
 		if [ -z "${stateon[$patch]}" ]; then
-			echo "Patch $patch has no ON state, global patch state is OFF"
-			_domopi_update_row -v "$DOMOPI_GLOBAL_CONF" currentstate:0 patchin="$patch" currentstate=1
+			VERBOSE='-q'
+			[[ "$DEBUG" = "On" ]] && echo "Patch $patch has no ON state, global patch state is OFF" && VERBOSE='-v'
+			_domopi_update_row $VERBOSE "$DOMOPI_GLOBAL_CONF" currentstate:0 patchin="$patch" currentstate=1
 		fi
 		if [ -z "${stateoff[$patch]}" ]; then
-			echo "Patch $patch has no OFF state, global patch state is ON"
-			_domopi_update_row -v "$DOMOPI_GLOBAL_CONF" currentstate:1 patchin="$patch" currentstate=0
+			VERBOSE='-q'
+			[[ "$DEBUG" = "On" ]] && echo "Patch $patch has no OFF state, global patch state is ON" && VERBOSE='-v'
+			_domopi_update_row $VERBOSE "$DOMOPI_GLOBAL_CONF" currentstate:1 patchin="$patch" currentstate=0
 		fi
 	done
 
