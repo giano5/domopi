@@ -215,7 +215,7 @@ function _domopi_file_open
 	# validate fingerprint
 		IFS='$' read FINGERPRINT SCHEMA <&$fd
 
-		if [[ "$DEBUG" = "On" ]]; then
+		if [[ "$DEBUG" = "On" ]] && [[ $DEBUGLEVEL -gt 5 ]]; then
 			echo "Opening: $1"
 			echo "Fingerprint:'$(rtrim $FINGERPRINT)' (must be: '$DOMOPI_FILE_FINGERPRINT')"
 			echo -n "Schema: '$SCHEMA' "
@@ -583,13 +583,15 @@ function _domopi_select_row()
 		# Impossibile costrutto pipe: deve generare variabili globali
 # TODO: ulteriore miglioramento rimuovendo cut eprocessando cut_fields tramite selezione su array row
 #
-		egrep "$row_to_match" "$file" | cut -d: -f$cut_fields > $_TMP
+
+		# Importante rimuovere a questo livello le linee con commento
+		# Il carattere di commento verrebbe più rilevato dopo il frazionamento per colonne operato da cut
+		grep -v '^#' "$file" | egrep -e "$row_to_match" | cut -d: -f$cut_fields > $_TMP
 		while read row
 		do
 			IFS=: read -a row <<< "$row"
 			local c=0
 			c=0
-			[[ $row =~ ^# ]] && continue
 
 			# Output ordinato
 			for pos in ${!posizioni[@]}
@@ -1748,7 +1750,9 @@ function _domopi_do_sensor_transition()
 	${DOMOPI_PRE_TRANSITION_CALLBACK:-true} $hwstate
 
 	# Simula clausola OR con due operazioni
+	echo -n "Patch-in configuration sync ... "
 	_domopi_update_row -v "$DOMOPI_GLOBAL_CONF" currentstate:$2 patchin=$1 
+	echo -n "Patch-out configuration sync ... "
 	_domopi_update_row -v "$DOMOPI_GLOBAL_CONF" currentstate:$2 patchout=$1 
 
 	${DOMOPI_POST_TRANSITION_CALLBACK:-true} $hwstate
@@ -1835,7 +1839,6 @@ function domopi_set_state()
 	
 	local patchnumber
 	if [[ "$COLUMN_TO_MATCH" = "wiredpi" ]]; then
-		echo _domopi_select_row -q "$DOMOPI_GLOBAL_CONF" type currentstate patchin device=$UUID groups $COLUMN_TO_MATCH=$1 
 		_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" type currentstate patchin device=$UUID groups $COLUMN_TO_MATCH=$1 >/dev/null
 	else
 		_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" type currentstate patchin groups $COLUMN_TO_MATCH=$1 >/dev/null
@@ -1845,7 +1848,7 @@ function domopi_set_state()
 	read patchnumber REST <<< ${DOMOPI_patchin[@]}
 	groups=${DOMOPI_groups[@]}
 
-	[[ "$DEBUG" = "On" ]] && echo $type $patchnumber
+	[[ "$DEBUG" = "On" ]] && echo "Prepare transition for patchnumber $patchnumber; trigger type $type."
 
 	# No transition
 	[[ $2 = ${DOMOPI_currentstate[0]} ]] && echo No transition && _domopi_file_close $fd && return 2
@@ -1896,7 +1899,7 @@ function domopi_set_state()
 	fi
 
 	echo 
-	echo Sincronizzazioni
+	echo "Global state synchronization"
 
 	# Sincronizzazione stati interruttori (per patch nummber)
 	declare -A stateon
@@ -1908,7 +1911,6 @@ function domopi_set_state()
 	local patch
 	for((_idx=0;_idx<${#DOMOPI_currentstate[@]};_idx++))
 	do
-		## TODO: Attensione: arriva un non integer !!!
 		if [[ ${DOMOPI_currentstate[$_idx]} -eq 0 ]]; then
 			patch=${DOMOPI_patchout[$_idx]}
 			[ -z "${stateoff[$patch]}" ] && stateoff[$patch]=0
@@ -1920,14 +1922,15 @@ function domopi_set_state()
 		fi
 	done
 
+
 	for patch in ${!stateon[@]} ${!stateoff[@]}
 	do
 		if [ -z "${stateon[$patch]}" ]; then
-			echo Patch $patch non ha stati ON, quindi lo stato totale è OFF
+			echo "Patch $patch has no ON state, global patch state is OFF"
 			_domopi_update_row -v "$DOMOPI_GLOBAL_CONF" currentstate:0 patchin="$patch" currentstate=1
 		fi
 		if [ -z "${stateoff[$patch]}" ]; then
-			echo Patch $patch non ha stati OFF, quindi lo stato totale è ON
+			echo "Patch $patch has no OFF state, global patch state is ON"
 			_domopi_update_row -v "$DOMOPI_GLOBAL_CONF" currentstate:1 patchin="$patch" currentstate=0
 		fi
 	done
@@ -1961,16 +1964,18 @@ function domopi_set_state()
 	for group in ${!stateon[@]} ${!stateoff[@]}
 	do
 		if [ -z "${stateon[$group]}" ]; then
-			echo Gruppo $group non ha stati ON, quindi lo stato totale è OFF
+			echo "Gruppo $group non ha stati ON, quindi lo stato totale è OFF"
 			_domopi_update_row -v "$DOMOPI_GLOBAL_CONF" currentstate:0 "groups=[0-9\ ]*$group[0-9\ ]*" currentstate=1
 		fi
 		if [ -z "${stateoff[$group]}" ]; then
-			echo Gruppo $group non ha stati OFF, quindi lo stato totale è ON
+			echo "Gruppo $group non ha stati OFF, quindi lo stato totale è ON"
 			_domopi_update_row -v "$DOMOPI_GLOBAL_CONF" currentstate:1 "groups=[0-9\ ]*$group[0-9\ ]*" currentstate=0
 		fi
 	done
 
 	_domopi_file_close $fd
+	[[ "$DEBUG" = "On" ]] && echo "End of transition."
+
 	return $ret
 }
 
@@ -2122,7 +2127,6 @@ function domopi_get_description()
 	done
 	shift $((OPTIND-1))
 
-	echo _domopi_select_row -q "$DOMOPI_GLOBAL_CONF" descriptionU $COLUMN_TO_MATCH="$VALUE_TO_MATCH" device="$UUID"
 	_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" descriptionU $COLUMN_TO_MATCH="$VALUE_TO_MATCH" device="$UUID"
 
 	_domopi_file_close $fd
@@ -2432,9 +2436,12 @@ function domopi_select()
 			if [[ $hwstate -ne ${DOMOPI_currentstate[$idx]} ]] ; then
 
 				# Quiet mode == debug mode
-				[[ "$1" = "-q" ]] && echo New state $hwstate from ${DOMOPI_currentstate[$idx]} for SWITCH wiredpi ${DOMOPI_wiredpi[$idx]} && domopi_set_state -w ${DOMOPI_wiredpi[$idx]} $hwstate >/dev/null
-
-				echo ${DOMOPI_wiredpi[$idx]} $hwstate none >$OUT
+				if [[ "$1" = "-q" ]] ; then
+					echo New state $hwstate from ${DOMOPI_currentstate[$idx]} for SWITCH wiredpi ${DOMOPI_wiredpi[$idx]} 
+					domopi_set_state -w ${DOMOPI_wiredpi[$idx]} $hwstate #>/dev/null
+				else
+					echo ${DOMOPI_wiredpi[$idx]} $hwstate none >$OUT
+				fi
 			fi
 		elif [[ ${DOMOPI_type[$idx]} =~ PUSH$ ]]
 		then
@@ -2443,22 +2450,23 @@ function domopi_select()
 			fi
 
 			if [[ $hwstate -eq ${inverse:-0} ]] ; then
-				[[ "$DEBUG" = "On" ]] && echo push DOWN ${DOMOPI_wiredpi[$idx]}
 				if [[ ${DOMOPI_pushed[$wiredpi]} -eq 0 ]]; then
 					# Push down
 					_domopi_toggle_state ${DOMOPI_currentstate[$idx]}
 					newState=$?
 
 					# Quiet mode == debug mode
-					[[ "$1" = "-q" ]] && echo New state $newState from ${DOMOPI_currentstate[$idx]} for PUSH wiredpi ${DOMOPI_wiredpi[$idx]} && domopi_set_state -w ${DOMOPI_wiredpi[$idx]} $newState >/dev/null
-
-					# supporting modifier with field 3
-					echo ${DOMOPI_wiredpi[$idx]} $newState none >$OUT 
+					if [[ "$1" = "-q" ]] ; then
+						echo New state $newState from ${DOMOPI_currentstate[$idx]} for PUSH wiredpi ${DOMOPI_wiredpi[$idx]}
+						domopi_set_state -w ${DOMOPI_wiredpi[$idx]} $newState # >/dev/null
+					else
+						# supporting modifier with field 3
+						echo ${DOMOPI_wiredpi[$idx]} $newState none >$OUT 
+					fi
 					eval "DOMOPI_pushed[$wiredpi]=1"
 				fi
 			else
 				# Push up
-				[[ "$DEBUG" = "On" ]] && echo push UP ${DOMOPI_wiredpi[$idx]}
 				eval "DOMOPI_pushed[$wiredpi]=0"
 			fi	
 		fi

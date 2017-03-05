@@ -72,15 +72,15 @@ function cleanup()
 #
 function test_callback()
 {
-	echo execute callback
-	#echo sensorID ${DOMOPI_sensorID[@]}
-	#echo wiredpi ${DOMOPI_wiredpi[@]}
+	if [[ "$DEBUG" = "On" ]] ; then
+		echo
+		echo "Execute transition callback for sensorIDs ${DOMOPI_sensorID[@]} (wiredpi ids: ${DOMOPI_wiredpi[@]})"
+	fi
 
 	for index in ${!DOMOPI_wiredpi[@]}
 	do
-		# NOTA: rimuovere echo per eseguire
 		if [ "$UUID" = "${DOMOPI_device[$index]}" ]; then
-			echo gpio write ${DOMOPI_wiredpi[$index]} $1
+			[[ "$DEBUG" = "On" ]] && echo "    Call 'gpio write ${DOMOPI_wiredpi[$index]} $1'"
 			gpio write ${DOMOPI_wiredpi[$index]} $1
 		fi
 	done
