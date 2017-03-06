@@ -17,7 +17,7 @@
 #
 #	 @author: Andrea Tassotti
 #
-DEBUG=true
+DEBUG=false
 SHUTDOWN=false
 
 trap process_USR1 SIGUSR1
