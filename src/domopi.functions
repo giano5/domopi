@@ -1305,14 +1305,6 @@ function domopi_create()
 
 			if [ -z "$WIREDPI" ]; then
 				_domopi_select_row -q "$MODULES_CONF_FILE" defaultstate inverse wiredpi type=$TYPE used=false >/dev/null
-				# Legge solo la prima risposta
-				read DEFAULTSTATE REST <<< "${DOMOPI_defaultstate[@]}"
-				read INVERSE REST <<< "${DOMOPI_inverse[@]}"
-				if [ -z "$INVERSE" ]; then
-					echo "FATAL: inverse column is null" >&2
-					return 255
-				fi
-
 				read WIREDPI REST <<< "${DOMOPI_wiredpi[@]}"
 				if [ -z "$WIREDPI" ] && [ "$TYPE" != "VSWITCH" ]
 				then
@@ -1320,10 +1312,8 @@ function domopi_create()
 					_domopi_file_close $fd
 					return 1
 				fi
-
-				_domopi_update_row "$MODULES_CONF_FILE" used:true wiredpi=$WIREDPI
 			else
-				_domopi_select_row -q "$MODULES_CONF_FILE" used wiredpi="$WIREDPI" >/dev/null
+				_domopi_select_row -q "$MODULES_CONF_FILE" defaultstate inverse used wiredpi="$WIREDPI" >/dev/null
 				if [[ "${DOMOPI_used[@]}" = "true" ]] 
 				then
 					echo "ERROR: wiredpi $WIREDPI is used by a sensor on device $UUID" >&2
@@ -1332,9 +1322,18 @@ function domopi_create()
 				fi
 				[ -z "${DOMOPI_used[@]}" ] &&
 					echo "ERROR: wiredpi $WIREDPI have no connection on device $UUID. May be not work properly" >&2
-
 			fi
 
+			# Legge solo la prima risposta
+			read DEFAULTSTATE REST <<< "${DOMOPI_defaultstate[@]}"
+			read INVERSE REST <<< "${DOMOPI_inverse[@]}"
+			if [ -z "$INVERSE" ]; then
+				echo "FATAL: inverse column is null" >&2
+				return 255
+			fi
+
+
+			_domopi_update_row "$MODULES_CONF_FILE" used:true wiredpi=$WIREDPI
 			_domopi_file_close $fd
 		fi
 
