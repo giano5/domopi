@@ -1493,7 +1493,7 @@ function domopi_modify()
 			_domopi_update_row "$DOMOPI_GLOBAL_CONF" "$PATCH" "$COLUMN_TO_MATCH" device="$UUID"
 			;;
 		max[eE]xecution[tT]ime)
-			_domopi_update_row "$DOMOPI_GLOBAL_CONF" "maxExecutionTime:$2" "$COLUMN_TO_MATCH" device="$UUID"
+			_domopi_update_row "$DOMOPI_GLOBAL_CONF" "maxexecutiontime:$2" "$COLUMN_TO_MATCH" device="$UUID"
 			;;
 		description)
 			_domopi_update_row "$DOMOPI_GLOBAL_CONF" "descriptionU:$2" "$COLUMN_TO_MATCH" device="$UUID"
@@ -2152,7 +2152,7 @@ function domopi_list()
 
 	case "$1" in
 	sensor)
-		_domopi_select_row "$DOMOPI_GLOBAL_CONF" device sensorID descriptionU currentstate wiredpi patchin patchout groups "groupID=x"
+		_domopi_select_row "$DOMOPI_GLOBAL_CONF" device sensorID descriptionU currentstate maxexecutiontime wiredpi patchin patchout groups "groupID=x"
 		;;
 	group)
 		(
@@ -2400,6 +2400,7 @@ function _domopi_toggle_state()
 #	@author Andrea Tassotti
 #
 declare -a DOMOPI_pushed
+declare -a DOMOPI_start_event
 public domopi_select
 function domopi_select()
 {
@@ -2408,6 +2409,8 @@ function domopi_select()
 	local hwstate
 	local wiredpi
 	local inverse
+	local now
+	local maxexecutiontime
 
 	[[ "$1" = "-q" ]] && OUT=/dev/null
 
@@ -2415,12 +2418,17 @@ function domopi_select()
 	fd=$?	# Non usato direttamente
 	[ $fd -eq 255 ] && return 1
 
-	_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" wiredpi currentstate inverse device="$UUID" type patchin=!null wiredpi=!null >/dev/null
+	_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" wiredpi currentstate inverse maxexecutiontime device="$UUID" type patchin=!null wiredpi=!null >/dev/null
+
+	now=$(date +%s)
 
 	for idx in ${!DOMOPI_wiredpi[@]}
 	do
 		wiredpi=${DOMOPI_wiredpi[$idx]}
 		inverse=${DOMOPI_inverse[$idx]}
+		maxexecutiontime=${DOMOPI_maxexecutiontime[$idx]}
+		start_event=${DOMOPI_start_event[$wiredpi]}
+		elapsed_time=$(($now - ${start_event:-$now}))
 
 		# Deve restituire il nuovo stato
 		${DOMOPI_POLL_CALLBACK:-true} ${DOMOPI_wiredpi[$idx]}
@@ -2446,6 +2454,23 @@ function domopi_select()
 			fi
 		elif [[ ${DOMOPI_type[$idx]} =~ PUSH$ ]]
 		then
+			# Verifica scadenza timeout maxexecutiontime
+			if [[ ${DOMOPI_currentstate[$idx]} -eq 1 ]] &&
+			   [[ ${maxexecutiontime:=0} -gt 0 ]] &&
+			   [[ $elapsed_time -gt $maxexecutiontime ]]; then
+				newState=0
+
+				# Quiet mode == debug mode
+				if [[ "$1" = "-q" ]] ; then
+					echo "New state $newState for PUSH wiredpi ${DOMOPI_wiredpi[$idx]}: maxexecutiontime $maxexecutiontime expired"
+					domopi_set_state -w ${DOMOPI_wiredpi[$idx]} $newState # >/dev/null
+				else
+					# supporting modifier with field 3
+					echo ${DOMOPI_wiredpi[$idx]} $newState none >$OUT 
+				fi
+				eval "DOMOPI_start_event[$wiredpi]="
+			fi
+
 			if [ -z "$inverse" ] ; then
 				echo -ne "WARNING: inverse column is null.  \r" >&2
 			fi
@@ -2464,7 +2489,8 @@ function domopi_select()
 						# supporting modifier with field 3
 						echo ${DOMOPI_wiredpi[$idx]} $newState none >$OUT 
 					fi
-					eval "DOMOPI_pushed[$wiredpi]=1"
+					eval "DOMOPI_pushed[$wiredpi]=$now"
+					eval "DOMOPI_start_event[$wiredpi]=$now"
 				fi
 			else
 				# Push up
