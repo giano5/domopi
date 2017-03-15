@@ -18,6 +18,10 @@ case "$1" in
 			echo First configuration: initialize identity: execute as $DOMOPI_USER
 			su - $DOMOPI_USER -s /bin/bash -c '. /usr/local/etc/default/domopi ; . $DOMOPI_API_PATH/domopi.functions; domopi_init TESTBOX'
 		fi
+
+		systemctl enable domod.unit
+		systemctl daemon-reload
+		systemctl start domod.unit
 		;;
 	abort-upgrade|abort-remove|abort-deconfigure)
 		;;
