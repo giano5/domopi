@@ -2511,14 +2511,31 @@ function domopi_select()
 #	Read from DOMOPI_PIPE and act state
 #	Use domopi_set_state
 #
+#	-t n - Timeout
+#
 #	@author Andrea Tassotti
 #
 public domopi_fetch
 function domopi_fetch()
 {
+	local timeout;
+	local wiredpi;
+	local state;
+	local modifier;
+
 	[ ! -p $DOMOPI_PIPE ] && return 1
 
-	read wiredpi state modifier < $DOMOPI_PIPE
+	# Processa opzioni locali
+	local OPTIND=1 OPTARG opt
+	while getopts ":d:s:t:vw:" opt; do
+		case $opt in
+		t)	timeout=$OPTARG ;;
+		esac
+	done
+
+	while [ -z "$wiredpi ]; do
+		read -t ${timeout:-1} wiredpi state modifier < $DOMOPI_PIPE
+	done	
 	domopi_set_state -w $wiredpi $state >/dev/null
 	echo $?	# Numero transazioni derivanti
 

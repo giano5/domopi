@@ -2,7 +2,8 @@
 set -e
 if [ \( "$1" = "upgrade" -o "$1" = "remove" \) ]; then
 	echo Esecuzione pre rimozione
-	systemctl stop domod.unit
-	systemctl disable domod.unit
+	systemctl stop domod
+	systemctl disable domod
 	systemctl daemon-reload
+	rm /usr/local/bin/domod
 fi

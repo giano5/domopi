@@ -22,7 +22,6 @@ SHUTDOWN=false
 
 trap process_USR1 SIGUSR1
 trap process_TERM SIGTERM
-trap process_PIPE SIGPIPE
 
 # Rilegge la configurazione ?
 process_USR1() {
@@ -32,30 +31,33 @@ process_USR1() {
 process_TERM() {
 	# ATTENZIONE! SIGPIPE implica anche SIGTERM
 	# Usiamo variabile SHUTDOWN per evitare loop tra segnali
-	! $SHUTDOWN && kill -s SIGPIPE $(cat $PIDFILE_BASEPATH/domod.pid)
-	[ -n "$CHILDPID" ] && kill $CHILDPID
-	rm $PIDFILE_BASEPATH/domod.pid
-	exit 0
+	SHUTDOWN=true
 }
 
-process_PIPE() {
-	SHUTDOWN=true
-	return 0
-}
+
 
 
 # Canonical name
 BASE_PATH=$( cd $( dirname "${BASH_SOURCE[0]}" ) && pwd )
 PROGRAM=$(basename $0)
-PIDFILE_BASEPATH=/var/run/domopi/
+PIDFILE_BASEPATH=/run/domopi
 cd /
 
 if [[ "$1" = "kill" ]] 
 then
 	if [ -f $PIDFILE_BASEPATH/domod.pid ] ; then
-		kill -s SIGTERM $(cat $PIDFILE_BASEPATH/domod.pid) >/dev/null 2>&1 ||
-			rm $PIDFILE_BASEPATH/domod.pid
+		mainpid=$(cat $PIDFILE_BASEPATH/domod.pid)
+		kill -s SIGTERM $mainpid 2>/dev/null 2>/dev/null
 	fi
+
+	PIDS=$(pidof -x "$PROGRAM")
+	PIDS=$(echo $PIDS | sed -e "s/$$//" )
+	for pid in $PIDS
+	do
+		kill -s SIGTERM $pid 2>/dev/null
+	done
+	rm -f $PIDFILE_BASEPATH/domod.pid
+
 	exit 0
 fi
 
@@ -100,6 +102,9 @@ if [ "$1" = "child" ] ; then
     shift
     umask 0
     $BASE_PATH/$PROGRAM refork "$@" </dev/null >/dev/null 2>/dev/null &
+
+    # Genera file di pid
+    [ -d $PIDFILE_BASEPATH -o -L $PIDFILE_BASEPATH ] && echo $! >$PIDFILE_BASEPATH/domod.pid
     exit 0
 fi
 
@@ -108,6 +113,7 @@ if [ "$1" != "refork" ] ; then
     setsid $BASE_PATH/$PROGRAM child "$@" &
     exit 0
 fi
+
 
 # Refork avvenuto
 exec >/dev/null
@@ -173,8 +179,6 @@ function poll_callback()
 
 
 
-# Genera file di pid
-[ -d $PIDFILE_BASEPATH ] && echo $$ >$PIDFILE_BASEPATH/domod.pid
 
 
 # Thread 1: In realtà child
@@ -203,5 +207,5 @@ while ! SHUTDOWN && [ $(jobs -p ) = "$CHILDPID" ]; do
 done
 
 # Non viene raggiunto mai questo punto
-exit 
+exit 0
 

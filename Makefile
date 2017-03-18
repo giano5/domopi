@@ -1,4 +1,4 @@
-VERSION=1.0.10
+VERSION=1.0.11
 SIZE=
 PACKAGE_NAME=domopi
 BUILDROOT=/tmp
@@ -23,7 +23,7 @@ prebuild: build-src/DEBIAN/control build-src/DEBIAN/preinst build-src/DEBIAN/pre
 	@mkdir -p ${BUILDROOT}/${PACKAGE_NAME}-${VERSION}/${DOMOPI_BIN_PATH}
 	@mkdir -p ${BUILDROOT}/${PACKAGE_NAME}-${VERSION}/${DOMOPI_API_PATH}
 	@mkdir -p ${BUILDROOT}/${PACKAGE_NAME}-${VERSION}/usr/local/etc/default
-	@mkdir -p ${BUILDROOT}/${PACKAGE_NAME}-${VERSION}/usr/lib/systemd/system
+	@mkdir -p ${BUILDROOT}/${PACKAGE_NAME}-${VERSION}/lib/systemd/system
 
 	@install --mode 755 build-src/DEBIAN/preinst ${BUILDROOT}/${PACKAGE_NAME}-${VERSION}/DEBIAN/
 	@install --mode 755 build-src/DEBIAN/prerm ${BUILDROOT}/${PACKAGE_NAME}-${VERSION}/DEBIAN/
@@ -34,7 +34,7 @@ prebuild: build-src/DEBIAN/control build-src/DEBIAN/preinst build-src/DEBIAN/pre
 	@install --mode 555 src/test.sh ${BUILDROOT}/${PACKAGE_NAME}-${VERSION}/${DOMOPI_BIN_PATH}/domopi-test.sh
 	@install --mode 444 src/conf/modules.cfg ${BUILDROOT}/${PACKAGE_NAME}-${VERSION}/${DOMOPI_CONF_TEMPLATE_PATH}
 	@install --mode 444 src/conf/domopi ${BUILDROOT}/${PACKAGE_NAME}-${VERSION}/usr/local/etc/default
-	@install --mode 444 src/domod.unit ${BUILDROOT}/${PACKAGE_NAME}-${VERSION}/usr/lib/systemd/system
+	@install --mode 444 src/domod.service ${BUILDROOT}/${PACKAGE_NAME}-${VERSION}/lib/systemd/system
 
 	@cd ${BUILDROOT}/${PACKAGE_NAME}-${VERSION} ; find ${ROOTS} -type f -exec md5sum '{}' \; >${BUILDROOT}/${PACKAGE_NAME}-${VERSION}/DEBIAN/md5sums
 #	@chmod 755 ${BUILDROOT}/${PACKAGE_NAME}-${VERSION}/DEBIAN/*

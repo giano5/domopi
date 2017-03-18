@@ -19,9 +19,10 @@ case "$1" in
 			su - $DOMOPI_USER -s /bin/bash -c '. /usr/local/etc/default/domopi ; . $DOMOPI_API_PATH/domopi.functions; domopi_init TESTBOX'
 		fi
 
-		systemctl enable domod.unit
+		ln -f /usr/local/bin/domod.sh /usr/local/bin/domod
+		systemctl enable domod
 		systemctl daemon-reload
-		systemctl start domod.unit
+		systemctl start domod
 		;;
 	abort-upgrade|abort-remove|abort-deconfigure)
 		;;
