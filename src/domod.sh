@@ -17,14 +17,14 @@
 #
 #	 @author: Andrea Tassotti
 #
-DEBUG=false
 SHUTDOWN=false
 
 trap process_USR1 SIGUSR1
 trap process_TERM SIGTERM
 
-# Rilegge la configurazione ?
+# Rilegge la configurazione
 process_USR1() {
+	#logger -t "domod[$$]" 'Got SIGUSR1: configuration reloaded.'
 	return 0
 }
 
@@ -32,6 +32,9 @@ process_TERM() {
 	# ATTENZIONE! SIGPIPE implica anche SIGTERM
 	# Usiamo variabile SHUTDOWN per evitare loop tra segnali
 	SHUTDOWN=true
+	logger -t "domod[$$]" "Main thread got SIGTERM: kill child $CHILDPID"
+	kill $CHILDPID
+	kill -s PIPE $$
 }
 
 
@@ -155,7 +158,7 @@ function run_callback()
 	do
 		# NOTA: rimuovere echo per eseguire
 		[ "$UUID" = "${DOMOPI_device[$index]}" ] && 
-			! $DEBUG && gpio write ${DOMOPI_wiredpi[$index]} $1
+			gpio write ${DOMOPI_wiredpi[$index]} $1
 	done
 }
 
@@ -171,19 +174,32 @@ function group_callback()
 function poll_callback()
 {
 	newState=0
-	if [ -n "$1" ] && ! $DEBUG; then
+	if [ -n "$1" ] ; then
 		newState=$( gpio read $1 )
 	fi
 	return $newState
 }
 
-
-
+function child_TERM()
+{
+	logger -t "domod[$$]" "Child thread got SIGTERM"
+	if [ -f $PIDFILE_BASEPATH/domod.pid ] ; then
+		mainpid=$(cat $PIDFILE_BASEPATH/domod.pid)
+		logger -t "domod[$$]" "Kill main thread $mainpid"
+		kill -s TERM $mainpid 2>/dev/null 2>/dev/null
+	fi
+exit
+}
 
 
 # Thread 1: In realtà child
+#
+# Attenzione: in quanto thread utilizza le stesse trap su segnali
 (
-	while true; do
+	trap child_TERM SIGTERM
+
+	# Carica configurazione
+	while true ; do
 		domopi_select 2>/dev/null
 		sleep 0.1
 	done
@@ -202,10 +218,18 @@ CHILDPID=$!
 #	Questo consente la terminazione del demone che potrà
 #	essere riavviato da systemd
 #
-while ! SHUTDOWN && [ $(jobs -p ) = "$CHILDPID" ]; do
-	domopi_fetch
+
+[ ! -p $DOMOPI_PIPE ] && exit 254
+
+while ! $SHUTDOWN && [ $(jobs -p ) = "$CHILDPID" ]
+do
+	domopi_fetch #$fd
+	[ $? -eq 1 ] && logger -t "domod[$$]" 'No pipe to poll.' && exit 255
+	[ $? -eq 255 ] && logger -t "domod[$$]" 'No wiredpi to poll.' && exit 255
 done
 
-# Non viene raggiunto mai questo punto
+
+rm -f $PIDFILE_BASEPATH/domod.pid
+
 exit 0
 

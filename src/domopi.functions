@@ -1817,7 +1817,7 @@ function domopi_set_state()
 	# Read schema
 	_domopi_file_open "$DOMOPI_GLOBAL_CONF"
 	fd=$?	# Non usato direttamente
-	[ $fd -eq 255 ] && return 1
+	[ $fd -eq 255 ] && return 255
 
 	# Processa opzioni locali
 	local OPTIND=1 OPTARG opt
@@ -1826,14 +1826,14 @@ function domopi_set_state()
 		d)	UUID=$OPTARG ;;	# remote device
 		n)	COLUMN_TO_MATCH=sensorID ;;
 		w)	COLUMN_TO_MATCH=wiredpi ;;	## IMPLICA DEVICE
-		:)	echo argument required ; return ;;
+		:)	echo argument required ; return 255 ;;
 		esac
 	done
 	shift $((OPTIND-1))
 
 	if [[ "$2" != '0' ]] && [[ "$2" != '1' ]] ; then
-		echo FATAL: GPIO interface only accept 0/1 values >&2
-		return 1
+		echo "FATAL: GPIO interface only accept 0/1 values: got $2" >&2
+		return 255
 	fi
 
 	
@@ -1848,14 +1848,14 @@ function domopi_set_state()
 	read patchnumber REST <<< ${DOMOPI_patchin[@]}
 	groups=${DOMOPI_groups[@]}
 
-	[[ "$DEBUG" = "On" ]] && echo "Prepare transition for patchnumber $patchnumber; trigger type $type."
+	[[ "$DEBUG" = "On" ]] && echo "domopi_set_state: Prepare transition for patchnumber $patchnumber; trigger type $type."
 
 	# No transition
-	[[ $2 = ${DOMOPI_currentstate[0]} ]] && echo No transition && _domopi_file_close $fd && return 2
+	[[ $2 = ${DOMOPI_currentstate[0]} ]] && echo No transition && _domopi_file_close $fd && return 255
 
 	if [[ "$type" = "GPUSH" ]] ||
 	   [[ "$type" = "GSWITCH" ]]; then
-		echo "Transizione stato per i gruppi: $groups"
+		echo "domopi_set_state: Transizione stato per i gruppi: $groups"
 		IN=""
 		for group in $groups
 		do
@@ -1878,12 +1878,13 @@ function domopi_set_state()
 	
 				[ -n "${DOMOPI_wiredpi[$_idx]}" ] && ${DOMOPI_GROUP_PRE_TRANSITION_CALLBACK:-true} ${DOMOPI_device[$_idx]} ${DOMOPI_sensorID[$_idx]} ${DOMOPI_wiredpi[$_idx]} ${DOMOPI_type[$_idx]} $2
 
+				echo _domopi_update_row -v "$DOMOPI_GLOBAL_CONF" currentstate:$2 sensorID=${DOMOPI_sensorID[$_idx]}
 				_domopi_update_row -v "$DOMOPI_GLOBAL_CONF" currentstate:$2 sensorID=${DOMOPI_sensorID[$_idx]}
 				ret=$?
 
 				[ -n "${DOMOPI_wiredpi[$_idx]}" ] && ${DOMOPI_GROUP_POST_TRANSITION_CALLBACK:-true} ${DOMOPI_device[$_idx]} ${DOMOPI_sensorID[$_idx]} ${DOMOPI_wiredpi[$_idx]} ${DOMOPI_type[$_idx]} $2
 			else
-				echo Propagazione transizione sensore ${DOMOPI_sensorID[$_idx]} per patch number ${DOMOPI_patchin[$_idx]}
+				echo "domopi_set_state: Propagazione transizione sensore ${DOMOPI_sensorID[$_idx]} per patch number ${DOMOPI_patchin[$_idx]}"
 				# ATTENZIONE: Usare sottoshell per evitare conflitto variabili DOMOPI_
 				( _domopi_do_sensor_transition "${DOMOPI_patchin[$_idx]}" "$2" )
 				ret=$?
@@ -1892,13 +1893,13 @@ function domopi_set_state()
 
 	else	
 		# No propagation
-		[ -z "$patchnumber" ] && echo WARNING: Given sensor is not an input >&2 && _domopi_file_close $fd && return 0
+		[ -z "$patchnumber" ] && echo "domopi_set_state: WARNING: Given sensor is not an input" >&2 && _domopi_file_close $fd && return 0
 
 		_domopi_do_sensor_transition "$patchnumber" "$2"
 		ret=$?
 	fi
 
-	[[ "$DEBUG" = "On" ]] && echo  && echo "Global state synchronization"
+	[[ "$DEBUG" = "On" ]] && echo  && echo "domopi_set_state: Global state synchronization"
 
 	# Sincronizzazione stati interruttori (per patch nummber)
 	declare -A stateon
@@ -1926,12 +1927,14 @@ function domopi_set_state()
 	do
 		if [ -z "${stateon[$patch]}" ]; then
 			VERBOSE='-q'
-			[[ "$DEBUG" = "On" ]] && echo "Patch $patch has no ON state, global patch state is OFF" && VERBOSE='-v'
+			[[ "$DEBUG" = "On" ]] && echo "domopi_set_state: Patch $patch has no ON state, global patch state is OFF" && VERBOSE='-v'
+			echo _domopi_update_row $VERBOSE "$DOMOPI_GLOBAL_CONF" currentstate:0 patchin="$patch" currentstate=1
 			_domopi_update_row $VERBOSE "$DOMOPI_GLOBAL_CONF" currentstate:0 patchin="$patch" currentstate=1
 		fi
 		if [ -z "${stateoff[$patch]}" ]; then
 			VERBOSE='-q'
-			[[ "$DEBUG" = "On" ]] && echo "Patch $patch has no OFF state, global patch state is ON" && VERBOSE='-v'
+			[[ "$DEBUG" = "On" ]] && echo "domopi_set_state: Patch $patch has no OFF state, global patch state is ON" && VERBOSE='-v'
+			echo _domopi_update_row $VERBOSE "$DOMOPI_GLOBAL_CONF" currentstate:1 patchin="$patch" currentstate=0
 			_domopi_update_row $VERBOSE "$DOMOPI_GLOBAL_CONF" currentstate:1 patchin="$patch" currentstate=0
 		fi
 	done
@@ -1965,17 +1968,17 @@ function domopi_set_state()
 	for group in ${!stateon[@]} ${!stateoff[@]}
 	do
 		if [ -z "${stateon[$group]}" ]; then
-			echo "Gruppo $group non ha stati ON, quindi lo stato totale è OFF"
+			echo "domopi_set_state: Gruppo $group non ha stati ON, quindi lo stato totale è OFF"
 			_domopi_update_row -v "$DOMOPI_GLOBAL_CONF" currentstate:0 "groups=[0-9\ ]*$group[0-9\ ]*" currentstate=1
 		fi
 		if [ -z "${stateoff[$group]}" ]; then
-			echo "Gruppo $group non ha stati OFF, quindi lo stato totale è ON"
+			echo "domopi_set_state: Gruppo $group non ha stati OFF, quindi lo stato totale è ON"
 			_domopi_update_row -v "$DOMOPI_GLOBAL_CONF" currentstate:1 "groups=[0-9\ ]*$group[0-9\ ]*" currentstate=0
 		fi
 	done
 
 	_domopi_file_close $fd
-	[[ "$DEBUG" = "On" ]] && echo "End of transition."
+	[[ "$DEBUG" = "On" ]] && echo "domopi_set_state: End of transition."
 
 	return $ret
 }
@@ -2376,6 +2379,8 @@ function _domopi_toggle_state()
 }
 
 
+
+
 ##
 #	Poll for states of a list of sensors
 #
@@ -2397,6 +2402,8 @@ function _domopi_toggle_state()
 #
 #	-q - Quite mode. Do not write in DOMOPI_PIPE
 #
+#	@see domopi_open()
+#
 #	@author Andrea Tassotti
 #
 declare -a DOMOPI_pushed
@@ -2405,20 +2412,24 @@ public domopi_select
 function domopi_select()
 {
 	local UUID=$DOMOPI_IDENT_UUID   # local device
-	local OUT=$DOMOPI_PIPE
 	local hwstate
 	local wiredpi
 	local inverse
 	local now
 	local maxexecutiontime
 
-	[[ "$1" = "-q" ]] && OUT=/dev/null
+	local UUID=$DOMOPI_IDENT_UUID   # local device
+	local fd
 
+	# Nota: _domopi_file_open utilizzato solo per caricare schema
+	# La lettura dei dati è fatta con altro descrittore
 	_domopi_file_open "$DOMOPI_GLOBAL_CONF"
 	fd=$?	# Non usato direttamente
 	[ $fd -eq 255 ] && return 1
+	[ -z "$DOMOPI_SCHEMA_NAME" ] && return 255
 
-	_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" wiredpi currentstate inverse maxexecutiontime device="$UUID" type patchin=!null wiredpi=!null >/dev/null
+
+	_domopi_select_row -q "$DOMOPI_GLOBAL_CONF" wiredpi currentstate inverse maxexecutiontime type device="$UUID" patchin=!null wiredpi=!null >/dev/null
 
 	now=$(date +%s)
 
@@ -2446,10 +2457,10 @@ function domopi_select()
 
 				# Quiet mode == debug mode
 				if [[ "$1" = "-q" ]] ; then
-					echo New state $hwstate from ${DOMOPI_currentstate[$idx]} for SWITCH wiredpi ${DOMOPI_wiredpi[$idx]} 
-					domopi_set_state -w ${DOMOPI_wiredpi[$idx]} $hwstate #>/dev/null
+					echo "domopi_select debug: New state $hwstate from ${DOMOPI_currentstate[$idx]} for SWITCH wiredpi ${DOMOPI_wiredpi[$idx]}"
+					domopi_set_state -w ${DOMOPI_wiredpi[$idx]} $hwstate >/dev/null
 				else
-					echo ${DOMOPI_wiredpi[$idx]} $hwstate none >$OUT
+					echo "${DOMOPI_wiredpi[$idx]} $hwstate none" >$DOMOPI_PIPE
 				fi
 			fi
 		elif [[ ${DOMOPI_type[$idx]} =~ PUSH$ ]]
@@ -2462,17 +2473,17 @@ function domopi_select()
 
 				# Quiet mode == debug mode
 				if [[ "$1" = "-q" ]] ; then
-					echo "New state $newState for PUSH wiredpi ${DOMOPI_wiredpi[$idx]}: maxexecutiontime $maxexecutiontime expired"
-					domopi_set_state -w ${DOMOPI_wiredpi[$idx]} $newState # >/dev/null
+					echo "domopi_select debug: New state $newState for PUSH wiredpi ${DOMOPI_wiredpi[$idx]}: maxexecutiontime $maxexecutiontime expired"
+					domopi_set_state -w ${DOMOPI_wiredpi[$idx]} $newState >/dev/null
 				else
 					# supporting modifier with field 3
-					echo ${DOMOPI_wiredpi[$idx]} $newState none >$OUT 
+					echo "${DOMOPI_wiredpi[$idx]} $newState none" >$DOMOPI_PIPE
 				fi
 				eval "DOMOPI_start_event[$wiredpi]="
 			fi
 
 			if [ -z "$inverse" ] ; then
-				echo -ne "WARNING: inverse column is null.  \r" >&2
+				echo -ne "domopi_select: WARNING: inverse column is null.  \r" >&2
 			fi
 
 			if [[ $hwstate -eq ${inverse:-0} ]] ; then
@@ -2483,11 +2494,11 @@ function domopi_select()
 
 					# Quiet mode == debug mode
 					if [[ "$1" = "-q" ]] ; then
-						echo New state $newState from ${DOMOPI_currentstate[$idx]} for PUSH wiredpi ${DOMOPI_wiredpi[$idx]}
-						domopi_set_state -w ${DOMOPI_wiredpi[$idx]} $newState # >/dev/null
+						echo "domopi_select debug: New state $newState from ${DOMOPI_currentstate[$idx]} for PUSH wiredpi ${DOMOPI_wiredpi[$idx]}"
+						domopi_set_state -w ${DOMOPI_wiredpi[$idx]} $newState >/dev/null
 					else
 						# supporting modifier with field 3
-						echo ${DOMOPI_wiredpi[$idx]} $newState none >$OUT 
+						echo "${DOMOPI_wiredpi[$idx]} $newState none" >$DOMOPI_PIPE
 					fi
 					eval "DOMOPI_pushed[$wiredpi]=$now"
 					eval "DOMOPI_start_event[$wiredpi]=$now"
@@ -2500,8 +2511,10 @@ function domopi_select()
 	done 
 
 	_domopi_file_close $fd
+
 	return 0
 }
+
 
 
 ##
@@ -2518,12 +2531,10 @@ function domopi_select()
 public domopi_fetch
 function domopi_fetch()
 {
-	local timeout;
-	local wiredpi;
-	local state;
-	local modifier;
-
-	[ ! -p $DOMOPI_PIPE ] && return 1
+	local timeout
+	local wiredpi
+	local state
+	local modifier
 
 	# Processa opzioni locali
 	local OPTIND=1 OPTARG opt
@@ -2533,10 +2544,11 @@ function domopi_fetch()
 		esac
 	done
 
-	while [ -z "$wiredpi ]; do
-		read -t ${timeout:-1} wiredpi state modifier < $DOMOPI_PIPE
-	done	
-	domopi_set_state -w $wiredpi $state >/dev/null
+	# Non si accorge se il thread di select (figlio) è interrotto
+	# Risolvibile in C quando sarà effettivamente un thread con read interrompibile da segnale
+	read wiredpi state modifier < $DOMOPI_PIPE
+	[ $? -eq 0 ] && domopi_set_state -w $wiredpi $state >/dev/null
+
 	echo $?	# Numero transazioni derivanti
 
 	return 0
@@ -2739,54 +2751,55 @@ then
 	if [ -x "$GPIO_CMD" ] ; then
 		_domopi_file_open "$MODULES_CONF_FILE" 
 		fd=$?	# Non usato direttamente
-		[ $fd -eq 255 ] && return 1
+		if [ $fd -ne 255 ] ; then
 
-		_domopi_select_row -q "$MODULES_CONF_FILE" defaultstate inverse wiredpi type >/dev/null
+			_domopi_select_row -q "$MODULES_CONF_FILE" defaultstate inverse wiredpi type >/dev/null
 
 
-		for row in ${!DOMOPI_wiredpi[@]}
-		do
-			case "${DOMOPI_type[$row]}" in
-			"LIGHT")
-				$GPIO_CMD mode ${DOMOPI_wiredpi[$row]} out >/dev/null 2>&1
-				;;
-			"NOLIGHT")
-				;;
-			"PUSH"|"GPUSH")
-				$GPIO_CMD mode ${DOMOPI_wiredpi[$row]} in >/dev/null 2>&1
-				if [[ ${DOMOPI_inverse[$row]} -eq 0 ]]; then
-					echo "Set PUSH wired ${DOMOPI_wiredpi[$row]} mode pull-down"
-					$GPIO_CMD mode ${DOMOPI_wiredpi[$row]} down >/dev/null 2>&1
-				else
-					echo "Set PUSH wired ${DOMOPI_wiredpi[$row]} mode pull-up"
-					$GPIO_CMD mode ${DOMOPI_wiredpi[$row]} up >/dev/null 2>&1
-				fi
+			for row in ${!DOMOPI_wiredpi[@]}
+			do
+				case "${DOMOPI_type[$row]}" in
+				"LIGHT")
+					$GPIO_CMD mode ${DOMOPI_wiredpi[$row]} out >/dev/null 2>&1
+					;;
+				"NOLIGHT")
+					;;
+				"PUSH"|"GPUSH")
+					$GPIO_CMD mode ${DOMOPI_wiredpi[$row]} in >/dev/null 2>&1
+					if [[ ${DOMOPI_inverse[$row]} -eq 0 ]]; then
+						echo "Set PUSH wired ${DOMOPI_wiredpi[$row]} mode pull-down"
+						$GPIO_CMD mode ${DOMOPI_wiredpi[$row]} down >/dev/null 2>&1
+					else
+						echo "Set PUSH wired ${DOMOPI_wiredpi[$row]} mode pull-up"
+						$GPIO_CMD mode ${DOMOPI_wiredpi[$row]} up >/dev/null 2>&1
+					fi
+	
+					;;
+				"SWITCH"|"GSWITCH")
+					$GPIO_CMD mode ${DOMOPI_wiredpi[$row]} in >/dev/null 2>&1
+					if [[ ${DOMOPI_inverse[$row]} -eq 0 ]]; then
+						echo "Set SWITCH wired ${DOMOPI_wiredpi[$row]} mode pull-down"
+						$GPIO_CMD mode ${DOMOPI_wiredpi[$row]} down >/dev/null 2>&1
+					else
+						echo "Set SWITCH wired ${DOMOPI_wiredpi[$row]} mode pull-up"
+						$GPIO_CMD mode ${DOMOPI_wiredpi[$row]} up >/dev/null 2>&1
+					fi
+					;;
+				"VSWITCH")
+					;;
+				"ALARM")
+					;;
+				"OTHER")
+					;;
+				"PULSE")
+					;;
+				*)
+					;;
+				esac
 
-				;;
-			"SWITCH"|"GSWITCH")
-				$GPIO_CMD mode ${DOMOPI_wiredpi[$row]} in >/dev/null 2>&1
-				if [[ ${DOMOPI_inverse[$row]} -eq 0 ]]; then
-					echo "Set SWITCH wired ${DOMOPI_wiredpi[$row]} mode pull-down"
-					$GPIO_CMD mode ${DOMOPI_wiredpi[$row]} down >/dev/null 2>&1
-				else
-					echo "Set SWITCH wired ${DOMOPI_wiredpi[$row]} mode pull-up"
-					$GPIO_CMD mode ${DOMOPI_wiredpi[$row]} up >/dev/null 2>&1
-				fi
-				;;
-			"VSWITCH")
-				;;
-			"ALARM")
-				;;
-			"OTHER")
-				;;
-			"PULSE")
-				;;
-			*)
-				;;
-			esac
-
-		done
-		echo done.
+			done
+			echo done.
+		fi
 	else
 		echo Fail. Missing gpio command.
 	fi

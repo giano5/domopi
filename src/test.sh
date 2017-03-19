@@ -469,6 +469,9 @@ function master_page_12()
 
 function master_page_13()
 {
+	# carica configurazione
+	domopi_open
+
 	echo Si pone in ascolto tutti gli input per attuare gli stati
 	echo Premere invio per iniziare. CRTL+C per terminare
 	read
@@ -477,8 +480,10 @@ function master_page_13()
 	trap shutdown 1 2 3 15
 	while ! $SHUTDOWN_THREAD; do
 		domopi_select -q # 2>/dev/null
+		[ $? -eq 255 ] && echo 'ABORT: No configuration given.' >&2 && break
 		sleep ${POLL_TIME:-0.1}
 	done
+	trap '' 1 2 3 15
 	domopi_notice
 	return 0
 }

@@ -1,4 +1,4 @@
-VERSION=1.0.11
+VERSION=1.0.12
 SIZE=
 PACKAGE_NAME=domopi
 BUILDROOT=/tmp
@@ -30,7 +30,7 @@ prebuild: build-src/DEBIAN/control build-src/DEBIAN/preinst build-src/DEBIAN/pre
 	@install --mode 755 build-src/DEBIAN/postinst ${BUILDROOT}/${PACKAGE_NAME}-${VERSION}/DEBIAN/
 	@install --mode 755 build-src/DEBIAN/postrm ${BUILDROOT}/${PACKAGE_NAME}-${VERSION}/DEBIAN/
 	@install --mode 555 src/domopi.functions ${BUILDROOT}/${PACKAGE_NAME}-${VERSION}/${DOMOPI_API_PATH}
-	@install --mode 555 src/domod.sh ${BUILDROOT}/${PACKAGE_NAME}-${VERSION}/${DOMOPI_BIN_PATH}
+	@install --mode 555 src/domod.sh ${BUILDROOT}/${PACKAGE_NAME}-${VERSION}/${DOMOPI_BIN_PATH}/domod
 	@install --mode 555 src/test.sh ${BUILDROOT}/${PACKAGE_NAME}-${VERSION}/${DOMOPI_BIN_PATH}/domopi-test.sh
 	@install --mode 444 src/conf/modules.cfg ${BUILDROOT}/${PACKAGE_NAME}-${VERSION}/${DOMOPI_CONF_TEMPLATE_PATH}
 	@install --mode 444 src/conf/domopi ${BUILDROOT}/${PACKAGE_NAME}-${VERSION}/usr/local/etc/default
