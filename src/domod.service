@@ -1,0 +1,16 @@
+[Unit]
+Description=Daemon to detect gpio event
+After=getty.target
+
+[Service]
+ExecStart=/usr/local/bin/domod
+ExecStop=/usr/local/bin/domod kill
+PIDFile=/run/domopi/domod.pid
+Type=forking
+User=pi
+Group=pi
+
+
+[Install]
+WantedBy=graphical.target
+
