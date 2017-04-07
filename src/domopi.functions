@@ -2761,28 +2761,35 @@ then
 				case "${DOMOPI_type[$row]}" in
 				"LIGHT")
 					$GPIO_CMD mode ${DOMOPI_wiredpi[$row]} out >/dev/null 2>&1
+					$GPIO_CMD export ${DOMOPI_wiredpi[$row]} out >/dev/null 2>&1
 					;;
 				"NOLIGHT")
 					;;
 				"PUSH"|"GPUSH")
 					$GPIO_CMD mode ${DOMOPI_wiredpi[$row]} in >/dev/null 2>&1
+					$GPIO_CMD export ${DOMOPI_wiredpi[$row]} in >/dev/null 2>&1
 					if [[ ${DOMOPI_inverse[$row]} -eq 0 ]]; then
 						echo "Set PUSH wired ${DOMOPI_wiredpi[$row]} mode pull-down"
 						$GPIO_CMD mode ${DOMOPI_wiredpi[$row]} down >/dev/null 2>&1
+						$GPIO_CMD edge ${DOMOPI_wiredpi[$row]} falling >/dev/null 2>&1
 					else
 						echo "Set PUSH wired ${DOMOPI_wiredpi[$row]} mode pull-up"
 						$GPIO_CMD mode ${DOMOPI_wiredpi[$row]} up >/dev/null 2>&1
+						$GPIO_CMD edge ${DOMOPI_wiredpi[$row]} rising >/dev/null 2>&1
 					fi
 	
 					;;
 				"SWITCH"|"GSWITCH")
 					$GPIO_CMD mode ${DOMOPI_wiredpi[$row]} in >/dev/null 2>&1
+					$GPIO_CMD export ${DOMOPI_wiredpi[$row]} in >/dev/null 2>&1
 					if [[ ${DOMOPI_inverse[$row]} -eq 0 ]]; then
 						echo "Set SWITCH wired ${DOMOPI_wiredpi[$row]} mode pull-down"
 						$GPIO_CMD mode ${DOMOPI_wiredpi[$row]} down >/dev/null 2>&1
+						$GPIO_CMD edge ${DOMOPI_wiredpi[$row]} falling >/dev/null 2>&1
 					else
 						echo "Set SWITCH wired ${DOMOPI_wiredpi[$row]} mode pull-up"
 						$GPIO_CMD mode ${DOMOPI_wiredpi[$row]} up >/dev/null 2>&1
+						$GPIO_CMD edge ${DOMOPI_wiredpi[$row]} rising >/dev/null 2>&1
 					fi
 					;;
 				"VSWITCH")
